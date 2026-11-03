@@ -28,6 +28,7 @@ export default function App() {
   const [bubbles, setBubbles] = useState({}); // key: color (in game) or socket id (in lobby)
   const [chatOpen, setChatOpen] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const [joinCode, setJoinCode] = useState(urlCode);
   const [notice, setNotice] = useState('');
   const [secondsLeft, setSecondsLeft] = useState(null);
@@ -222,9 +223,16 @@ export default function App() {
   };
   const leaveGame = () => {
     if (!connected) return;
-    setLeaveOpen(false);
-    socket.emit('leave_game');
-    reset();
+    setLeaving(true);
+    socket.timeout(5000).emit('leave_game', (error, result) => {
+      setLeaving(false);
+      if (error || !result?.ok) {
+        showNotice('Could not leave the game. Please try again.');
+        return;
+      }
+      setLeaveOpen(false);
+      reset();
+    });
   };
   const sendChat = (text) => socket.emit('chat_message', { text });
 
@@ -472,7 +480,9 @@ export default function App() {
             <h2>Quit game?</h2>
             <p className="hint">Agar aap nikle to game haar jayega aur bot aapki jagah le lega.</p>
             <div className="row">
-              <button className="btn alt" onClick={leaveGame} disabled={!connected}>Quit</button>
+              <button className="btn alt" onClick={leaveGame} disabled={!connected || leaving}>
+                {leaving ? 'Leaving...' : 'Quit'}
+              </button>
               <button className="btn green" onClick={() => setLeaveOpen(false)}>Stay</button>
             </div>
           </div>

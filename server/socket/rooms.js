@@ -479,11 +479,20 @@ function registerHandlers(io, socket) {
 
   socket.on('leave_room', () => leaveLobby(io, socket));
 
-  socket.on('leave_game', () => {
+  socket.on('leave_game', (ack) => {
+    const acknowledge = () => {
+      if (typeof ack === 'function') ack({ ok: true });
+    };
     const room = rooms.get(socket.data.roomId);
-    if (!room) return;
+    if (!room) {
+      acknowledge();
+      return;
+    }
     const seat = room.seats.find((s) => s.socketId === socket.id);
-    if (!seat) return;
+    if (!seat) {
+      acknowledge();
+      return;
+    }
 
     seat.socketId = null;
     seat.isBot = true;
@@ -502,6 +511,7 @@ function registerHandlers(io, socket) {
     if (!room.seats.some((s) => s.socketId)) {
       clearTimeout(room.emptyTimer);
       room.emptyTimer = setTimeout(() => destroyRoom(io, room), RECONNECT_MS);
+      acknowledge();
       return;
     }
 
@@ -511,6 +521,7 @@ function registerHandlers(io, socket) {
       schedule(io, room);
     }
     broadcast(io, room);
+    acknowledge();
   });
 
   socket.on('start_room', () => {
