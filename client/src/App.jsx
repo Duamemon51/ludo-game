@@ -19,22 +19,15 @@ const SLOTS = {
   yellow: { vertical: 'bottom', side: 'right' },
 };
 
-function statusText(game, myColor) {
-  const mine = game.turn === myColor;
-  if (game.phase === 'roll') return mine ? 'Your turn: tap the dice!' : `${cap(game.turn)}'s turn`;
-  if (game.phase === 'move') return mine ? 'Tap a glowing token to move' : `${cap(game.turn)} is choosing a move...`;
-  if (game.phase === 'skip') return mine ? 'No valid move, turn passes' : `${cap(game.turn)} has no valid move`;
-  return '';
-}
-
 export default function App() {
-  const [connected, setConnected] = useState(socket.connected);
+  const [connected, setConnected] = useState(socket.connected && navigator.onLine);
   const [status, setStatus] = useState('idle'); // idle | queued | lobby | playing | over
   const [myColor, setMyColor] = useState(null);
   const [game, setGame] = useState(null);
   const [lobby, setLobby] = useState(null);
   const [bubbles, setBubbles] = useState({}); // key: color (in game) or socket id (in lobby)
   const [chatOpen, setChatOpen] = useState(false);
+  const [leaveOpen, setLeaveOpen] = useState(false);
   const [joinCode, setJoinCode] = useState(urlCode);
   const [notice, setNotice] = useState('');
   const [secondsLeft, setSecondsLeft] = useState(null);
@@ -44,6 +37,12 @@ export default function App() {
     () => localStorage.getItem('ludo-name') || 'Player' + Math.floor(100 + Math.random() * 900)
   );
   const autoJoined = useRef(false);
+  const statusRef = useRef(status);
+  statusRef.current = status;
+  const diceOptions = game?.diceOptions || (
+    game?.dice != null ? [{ id: 0, value: game.dice, moves: game.validMoves || [] }] : []
+  );
+  const usableDiceOptions = diceOptions.filter((option) => option.moves.length > 0);
 
   const showNotice = (msg) => {
     setNotice(msg);
@@ -51,9 +50,19 @@ export default function App() {
   };
 
   useEffect(() => {
-    const onConnect = () => setConnected(true);
-    const onDisconnect = () => {
-      setConnected(false);
+    const onConnect = () => {
+      setConnected(navigator.onLine);
+      if (navigator.onLine) socket.emit('resume_game'); // ask the server to put us back in our game, if any
+    };
+    const onDisconnect = () => setConnected(false); // keep the board on screen while reconnecting
+    const onOffline = () => setConnected(false);
+    const onOnline = () => {
+      setConnected(socket.connected);
+      if (socket.connected) socket.emit('resume_game');
+    };
+    const onNoGame = () => {
+      if (statusRef.current === 'over') return; // keep the winner screen visible
+      if (statusRef.current === 'playing') showNotice('Your game has ended.');
       setStatus('idle');
       setGame(null);
       setLobby(null);
@@ -95,6 +104,9 @@ export default function App() {
 
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
+    window.addEventListener('offline', onOffline);
+    window.addEventListener('online', onOnline);
+    socket.on('no_game', onNoGame);
     socket.on('queued', onQueued);
     socket.on('lobby_update', onLobby);
     socket.on('lobby_error', showNotice);
@@ -103,9 +115,14 @@ export default function App() {
     socket.on('notice', showNotice);
     socket.on('game_over', onOver);
     socket.on('chat_message', onChat);
+    if (socket.connected && navigator.onLine) socket.emit('resume_game'); // page was refreshed while already connected
+
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
+      window.removeEventListener('offline', onOffline);
+      window.removeEventListener('online', onOnline);
+      socket.off('no_game', onNoGame);
       socket.off('queued', onQueued);
       socket.off('lobby_update', onLobby);
       socket.off('lobby_error', showNotice);
@@ -134,6 +151,11 @@ export default function App() {
     }
   }, [status]);
 
+  // Game over or left: close the quit popup
+  useEffect(() => {
+    if (status !== 'playing') setLeaveOpen(false);
+  }, [status]);
+
   // Turn countdown
   useEffect(() => {
     if (!game?.localDeadline) {
@@ -158,14 +180,20 @@ export default function App() {
 
   // Auto-play when there is exactly one possible move
   useEffect(() => {
-    if (!AUTO_MOVE_SINGLE || status !== 'playing' || !game) return;
-    if (game.turn !== myColor || game.phase !== 'move' || game.validMoves.length !== 1) return;
+    if (!AUTO_MOVE_SINGLE || !connected || status !== 'playing' || !game) return;
+    if (game.turn !== myColor || game.phase !== 'move' || game.doubleRoll) return;
+    const options = (game.diceOptions || (
+      game.dice != null ? [{ id: 0, value: game.dice, moves: game.validMoves || [] }] : []
+    )).filter((option) => option.moves.length > 0);
+    if (options.length !== 1) return;
+    const [option] = options;
+    if (option.moves.length !== 1) return;
     const t = setTimeout(
-      () => socket.emit('move_token', { tokenIdx: game.validMoves[0] }),
+      () => socket.emit('move_token', { tokenIdx: option.moves[0], diceId: option.id }),
       900
     );
     return () => clearTimeout(t);
-  }, [game, status, myColor]);
+  }, [game, status, myColor, connected]);
 
   const cleanName = () => {
     const clean = name.trim() || 'Player';
@@ -192,6 +220,12 @@ export default function App() {
     setMyColor(null);
     setStatus('idle');
   };
+  const leaveGame = () => {
+    if (!connected) return;
+    setLeaveOpen(false);
+    socket.emit('leave_game');
+    reset();
+  };
   const sendChat = (text) => socket.emit('chat_message', { text });
 
   const shareLink = lobby ? `${window.location.origin}/?room=${lobby.code}` : '';
@@ -209,9 +243,11 @@ export default function App() {
     : '';
 
   const inGame = Boolean(game && (status === 'playing' || status === 'over'));
-  const myTurn = status === 'playing' && game && game.turn === myColor;
-  const canRoll = Boolean(myTurn && game.phase === 'roll');
-  const movable = myTurn && game.phase === 'move' ? game.validMoves : [];
+  const myTurn = connected && status === 'playing' && game && game.turn === myColor;
+  const canRoll = Boolean(myTurn && (game.phase === 'roll' || game.phase === 'bonus-roll'));
+  const movable = myTurn && game.phase === 'move'
+    ? [...new Set(usableDiceOptions.flatMap((option) => option.moves))]
+    : [];
   const isHost = lobby && lobby.hostId === socket.id;
 
   const renderSlot = (color) => {
@@ -229,8 +265,9 @@ export default function App() {
         isMe={color === myColor}
         pct={pct}
         dice={game.dice}
+        diceRollId={game.dieRollId}
         canRoll={canRoll}
-        onRoll={() => socket.emit('roll_dice')}
+        onRoll={() => socket.emit(game.phase === 'bonus-roll' ? 'roll_bonus_dice' : 'roll_dice')}
         onChat={() => setChatOpen(true)}
         bubble={bubbles[color]}
       />
@@ -238,11 +275,12 @@ export default function App() {
   };
 
   return (
-    <div className={'app' + (inGame ? ' in-game' : '')}>
+    <div className={'app' + (inGame ? ' in-game' : '') + (inGame && game.seats.length === 4 ? ' four-player' : '')}>
       <h1 className="logo">LUDO</h1>
       {notice && <div className="toast">{notice}</div>}
 
-      {!connected && <div className="card">Connecting to server...</div>}
+      {!connected && !inGame && <div className="card">Connecting to server...</div>}
+      {!connected && inGame && <div className="reconnect-banner">Connection lost. Reconnecting...</div>}
 
       {connected && status === 'idle' && (
         <div className="card">
@@ -348,6 +386,31 @@ export default function App() {
 
       {inGame && (
         <div className="game">
+          {status === 'playing' && (
+            <div className="game-top">
+              <button
+                className="exit-btn"
+              onClick={() => setLeaveOpen(true)}
+              aria-label="Leave game"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="22"
+                height="22"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" />
+                <path d="M10 17l-5-5 5-5" />
+                <path d="M5 12h11" />
+              </svg>
+            </button>
+            </div>
+          )}
+
           <div className="prow">
             {renderSlot('red')}
             {renderSlot('green')}
@@ -355,10 +418,13 @@ export default function App() {
 
           <Board
             tokens={game.tokens}
+            lastMove={game.lastMove}
             turn={status === 'playing' ? game.turn : null}
             myColor={myColor}
             movable={movable}
-            onMove={(idx) => socket.emit('move_token', { tokenIdx: idx })}
+            diceOptions={diceOptions}
+            rollId={game.rollId}
+            onMove={(idx, diceId) => socket.emit('move_token', { tokenIdx: idx, diceId })}
           />
 
           <div className="prow">
@@ -366,15 +432,49 @@ export default function App() {
             {renderSlot('yellow')}
           </div>
 
-          <div className="status">{status === 'playing' ? statusText(game, myColor) : ''}</div>
         </div>
       )}
 
       {status === 'over' && game && (
-        <div className="overlay">
-          <div className="card center">
-            <h2>{game.winner === myColor ? '🎉 You won!' : `${cap(game.winner)} wins`}</h2>
-            <button className="btn" onClick={reset}>Back to menu</button>
+        <div className={`overlay game-result ${game.winner === myColor ? 'victory' : 'defeat'}`}>
+          {game.winner === myColor && (
+            <div className="victory-confetti" aria-hidden="true">
+              {Array.from({ length: 32 }, (_, i) => (
+                <span
+                  key={i}
+                  style={{
+                    '--x': `${(i * 37 + 11) % 100}vw`,
+                    '--delay': `${(i % 8) * 90}ms`,
+                    '--spin': `${360 + (i % 4) * 180}deg`,
+                  }}
+                />
+              ))}
+            </div>
+          )}
+          <div className={`card center result-card ${game.winner === myColor ? 'win' : 'loss'}`}>
+            <div className="result-icon" aria-hidden="true">
+              {game.winner === myColor ? '🏆' : '🎲'}
+            </div>
+            <span className="result-kicker">
+              {game.winner === myColor ? 'CHAMPION' : 'GAME OVER'}
+            </span>
+            <h2>{game.winner === myColor ? 'You won!' : `${cap(game.winner)} wins`}</h2>
+            <p>{game.winner === myColor ? 'Amazing game. You conquered the board!' : 'Better luck next game!'}</p>
+            <button className="btn" onClick={reset}>Play again</button>
+          </div>
+        </div>
+      )}
+
+      {leaveOpen && status === 'playing' && (
+        <div className="overlay" onClick={() => setLeaveOpen(false)}>
+          <div className="card center quit-card" onClick={(e) => e.stopPropagation()}>
+            <div className="quit-icon">🚪</div>
+            <h2>Quit game?</h2>
+            <p className="hint">Agar aap nikle to game haar jayega aur bot aapki jagah le lega.</p>
+            <div className="row">
+              <button className="btn alt" onClick={leaveGame} disabled={!connected}>Quit</button>
+              <button className="btn green" onClick={() => setLeaveOpen(false)}>Stay</button>
+            </div>
           </div>
         </div>
       )}

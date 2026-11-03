@@ -11,7 +11,9 @@ app.get('/', (req, res) => res.send('Ludo server is running'));
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: '*' }
+  cors: { origin: '*' },
+  pingInterval: 10000, // detect dropped connections within about 20 seconds
+  pingTimeout: 10000,
 });
 
 io.on('connection', (socket) => {

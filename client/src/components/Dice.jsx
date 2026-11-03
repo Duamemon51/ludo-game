@@ -11,7 +11,7 @@ const DOTS = {
   6: [0, 2, 3, 5, 6, 8],
 };
 
-export default function Dice({ value, color, canRoll, onRoll }) {
+export default function Dice({ value, color, canRoll, onRoll, rollId }) {
   const [shown, setShown] = useState(null);
   const [rolling, setRolling] = useState(false);
 
@@ -33,13 +33,13 @@ export default function Dice({ value, color, canRoll, onRoll }) {
       clearInterval(spin);
       clearTimeout(land);
     };
-  }, [value]);
+  }, [value, rollId]);
 
   return (
     <button
       className={'dice' + (rolling ? ' rolling' : '') + (canRoll ? ' can-roll' : '')}
       style={{ '--c': color ? COLORS[color] : '#9ca3af' }}
-      disabled={!canRoll}
+      disabled={!canRoll || rolling}
       onClick={onRoll}
       aria-label="Roll dice"
     >

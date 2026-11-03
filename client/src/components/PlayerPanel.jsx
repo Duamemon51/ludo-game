@@ -3,7 +3,7 @@ import Bubble from './Bubble';
 import { COLORS } from '../ludoLayout';
 
 export default function PlayerPanel({
-  seat, vertical, side, active, isMe, pct, dice, canRoll, onRoll, onChat, bubble,
+  seat, vertical, side, active, isMe, pct, dice, diceRollId, canRoll, onRoll, onChat, bubble,
 }) {
   const initial = seat.isBot ? '🤖' : (seat.name || '?').trim().charAt(0).toUpperCase();
 
@@ -24,7 +24,15 @@ export default function PlayerPanel({
           {isMe && <span className="chat-badge">💬</span>}
         </button>
 
-        {active && <Dice value={dice} color={seat.color} canRoll={canRoll} onRoll={onRoll} />}
+        {active && (
+          <Dice
+            value={dice}
+            rollId={diceRollId}
+            color={seat.color}
+            canRoll={canRoll}
+            onRoll={onRoll}
+          />
+        )}
       </div>
 
       <div className="pname">
