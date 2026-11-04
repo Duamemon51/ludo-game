@@ -26,15 +26,8 @@ button { touch-action: manipulation; font-family: inherit; }
   padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom));
   overflow-x: hidden;
 }
-.app.in-game .logo { display: none; }
+.app.home-screen { gap: 0; padding: 0; }
 .app.in-game.four-player { padding-top: calc(max(8px, env(safe-area-inset-top)) + 46px); }
-.logo {
-  margin: 4px 0;
-  color: #fff;
-  letter-spacing: 8px;
-  font-size: 34px;
-  text-shadow: 0 1px 0 #e53935, 0 2px 0 #c62828, 0 3px 0 #a31f1f, 0 4px 0 #7f1717, 0 8px 14px rgba(0, 0, 0, 0.5);
-}
 
 /* ===== Cards, inputs, buttons (3D) ===== */
 .card {
@@ -110,9 +103,10 @@ button { touch-action: manipulation; font-family: inherit; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 22px;
   width: 100%;
   max-width: 520px;
+  padding-top: 26px;
 }
 
 /* ===== Board (raised 3D frame) ===== */
@@ -163,8 +157,25 @@ button { touch-action: manipulation; font-family: inherit; }
   box-shadow: none;
 }
 .panel.right { align-items: flex-end; text-align: right; }
-.pmain { display: flex; align-items: center; gap: 10px; min-height: 60px; }
+.pmain { display: flex; align-items: center; gap: 22px; min-height: 60px; }
 .panel.right .pmain { flex-direction: row-reverse; }
+.player-profile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  flex: 0 0 56px;
+}
+.panel.right .player-profile { align-items: flex-end; }
+.player-profile .pname {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  width: max-content;
+  max-width: min(42vw, 150px);
+}
+.panel.right .player-profile .pname { right: 0; left: auto; }
 
 /* Name plate: glossy 3D pill */
 .pname {
@@ -686,13 +697,14 @@ button { touch-action: manipulation; font-family: inherit; }
 }
 .game-top {
   position: fixed;
-  top: max(8px, env(safe-area-inset-top));
-  right: 12px;
+  top: max(2px, env(safe-area-inset-top));
+  right: max(8px, env(safe-area-inset-right));
   z-index: 35;
+  padding: 4px;
 }
 .exit-btn {
-  width: 38px;
-  height: 38px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: 2px solid #fff;
   background: linear-gradient(180deg, #ff5a5a, #c62828);

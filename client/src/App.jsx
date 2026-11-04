@@ -4,6 +4,9 @@ import Board from './components/Board';
 import PlayerPanel from './components/PlayerPanel';
 import ChatSheet from './components/ChatSheet';
 import Bubble from './components/Bubble';
+import HomeMenu from './components/HomeMenu';
+import MatchmakingScreen from './components/MatchmakingScreen';
+import LoginScreen from './components/LoginScreen';
 
 const AUTO_MOVE_SINGLE = true; // auto-play when only one token can move
 const TURN_SECONDS = 20;
@@ -30,6 +33,7 @@ const rotateSlot = ({ vertical, side }, degrees) => {
 export default function App() {
   const [connected, setConnected] = useState(socket.connected && navigator.onLine);
   const [status, setStatus] = useState('idle'); // idle | queued | lobby | playing | over
+  const [homeView, setHomeView] = useState(urlCode ? 'menu' : 'login');
   const [myColor, setMyColor] = useState(null);
   const [game, setGame] = useState(null);
   const [lobby, setLobby] = useState(null);
@@ -86,6 +90,7 @@ export default function App() {
     };
     const onMatch = ({ yourColor }) => {
       setMyColor(yourColor);
+      setHomeView('menu');
       setLobby(null);
       setBubbles({});
       setStatus('playing');
@@ -259,6 +264,7 @@ export default function App() {
     : '';
 
   const inGame = Boolean(game && (status === 'playing' || status === 'over'));
+  const homeScreen = connected && status === 'idle';
   const boardRotation = BOARD_ROTATION[myColor] ?? 0;
   const panelSlots = Object.fromEntries(
     Object.entries(SLOTS).map(([color, slot]) => [color, rotateSlot(slot, boardRotation)])
@@ -300,53 +306,32 @@ export default function App() {
   };
 
   return (
-    <div className={'app' + (inGame ? ' in-game' : '') + (inGame && game.seats.length === 4 ? ' four-player' : '')}>
-      <h1 className="logo">LUDO</h1>
+    <div className={'app' + (homeScreen ? ' home-screen' : '') + (inGame ? ' in-game' : '') + (inGame && game.seats.length === 4 ? ' four-player' : '')}>
       {notice && <div className="toast">{notice}</div>}
 
       {!connected && !inGame && <div className="card">Connecting to server...</div>}
       {!connected && inGame && <div className="reconnect-banner">Connection lost. Reconnecting...</div>}
 
-      {connected && status === 'idle' && (
-        <div className="card">
-          <label className="label">Your name</label>
-          <input
-            className="input"
-            value={name}
-            maxLength={15}
-            onChange={(e) => setName(e.target.value)}
-          />
-
-          <button className="btn" onClick={() => findMatch(2)}>Play 1 vs 1 (online)</button>
-          <button className="btn alt" onClick={() => findMatch(4)}>Play 4 players (online)</button>
-          <p className="hint">If not enough players join in 8 seconds, bots fill the empty seats.</p>
-
-          <hr className="divider" />
-          <label className="label">Play with friends</label>
-          <div className="row">
-            <button className="btn green" onClick={() => createRoom(2)}>2-player room</button>
-            <button className="btn green" onClick={() => createRoom(4)}>4-player room</button>
-          </div>
-          <div className="row">
-            <input
-              className="input code-input"
-              placeholder="ROOM CODE"
-              value={joinCode}
-              maxLength={5}
-              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-            />
-            <button className="btn dark" onClick={joinRoom}>Join</button>
-          </div>
-        </div>
+      {connected && status === 'idle' && homeView === 'login' && (
+        <LoginScreen
+          onSignIn={(action) => showNotice(`${action} is not connected yet. Continue as guest to play.`)}
+          onContinueAsGuest={() => setHomeView('menu')}
+        />
       )}
 
-      {status === 'queued' && (
-        <div className="card center">
-          <div className="spinner" />
-          <p>Finding players... {queueLeft}s</p>
-          <button className="btn alt" onClick={cancel}>Cancel</button>
-        </div>
+      {connected && status === 'idle' && homeView === 'menu' && (
+        <HomeMenu
+          name={name}
+          onNameChange={setName}
+          onFindMatch={findMatch}
+          onCreateRoom={createRoom}
+          joinCode={joinCode}
+          onJoinCodeChange={setJoinCode}
+          onJoinRoom={joinRoom}
+        />
       )}
+
+      {status === 'queued' && <MatchmakingScreen secondsLeft={queueLeft} onCancel={cancel} />}
 
       {status === 'lobby' && lobby && (
         <div className="card center">
@@ -420,8 +405,8 @@ export default function App() {
             >
               <svg
                 viewBox="0 0 24 24"
-                width="22"
-                height="22"
+              width="18"
+              height="18"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2.6"
