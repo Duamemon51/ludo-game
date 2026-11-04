@@ -17,30 +17,19 @@ const CUBE = [
   [4, 'rotateY(-90deg)'], [2, 'rotateX(90deg)'], [5, 'rotateX(-90deg)'],
 ];
 
-const ROLL_MS = 380; // how long one roll lasts (animation and lock)
+const ROLL_MS = 500;
 
 export default function GameDice({ value, color, canRoll, onRoll, rollId }) {
   const [settledRoll, setSettledRoll] = useState(null);
-  const [seenKey, setSeenKey] = useState(null);
-  const [spins, setSpins] = useState(0);
   const rollKey = `${rollId ?? ''}:${value ?? ''}`;
   const rolling = value != null && settledRoll !== rollKey;
-
-  // each new roll adds three full turns, in the same render as the new face,
-  // so the cube tumbles straight to its result without a stutter
-  if (value != null && seenKey !== rollKey) {
-    setSeenKey(rollKey);
-    setSpins((s) => s + 3);
-  }
 
   useEffect(() => {
     if (value == null) return;
     const land = setTimeout(() => setSettledRoll(rollKey), ROLL_MS);
     return () => clearTimeout(land);
   }, [value, rollId, rollKey]);
-
   const [x, y] = TURN[value ?? 1];
-  const turn = 360 * spins;
 
   return (
     <button
@@ -52,7 +41,7 @@ export default function GameDice({ value, color, canRoll, onRoll, rollId }) {
     >
       <style>{`
         .gd {
-          --size: var(--gd-size, 50px);
+          --size: var(--gd-size, 40px);
           position: relative; display: block; flex: none;
           width: var(--size); height: var(--size); margin: 0; padding: 0;
           border: 0; background: none; border-radius: 20%; opacity: 1;
@@ -70,21 +59,17 @@ export default function GameDice({ value, color, canRoll, onRoll, rollId }) {
         .gd.can-roll .gd-shadow { background: color-mix(in srgb, var(--c) 40%, #000); }
         .gd.rolling .gd-shadow { animation: gd-shadow var(--roll) ease-out; }
 
-        /* ring in the player's colour: whose turn it is */
-        .gd-ring {
-          position: absolute; inset: -6px; border-radius: 28%; pointer-events: none;
-          box-shadow: 0 0 0 2px color-mix(in srgb, var(--c) 50%, transparent);
-        }
-        .gd.can-roll .gd-ring { box-shadow: 0 0 0 3px var(--c), 0 0 16px var(--c); animation: gd-pulse 1.3s ease-in-out infinite; }
-
         .gd-hop { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform .15s; }
         .gd.can-roll:hover .gd-hop { transform: translateY(-3px); }
         .gd.can-roll:active .gd-hop { transform: translateY(1px) scale(.96); }
         .gd.rolling .gd-hop { animation: gd-hop var(--roll) ease-out; }
 
+        .gd-tumble {
+          position: absolute; inset: 0; transform-style: preserve-3d;
+        }
+        .gd-tumble.rolling { animation: gd-tumble var(--roll) cubic-bezier(.15, .55, .3, 1) both; }
         .gd-cube {
           position: absolute; inset: 0; transform-style: preserve-3d;
-          transition: transform var(--roll) cubic-bezier(.2, .6, .3, 1);
         }
         .gd-face {
           position: absolute; inset: 0; display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr);
@@ -113,37 +98,43 @@ export default function GameDice({ value, color, canRoll, onRoll, rollId }) {
           78%  { transform: translate(-1px, -4px) rotateZ(-340deg) scale(1.02); }
           100% { transform: translate(0, 0) rotateZ(-360deg) scale(1); }
         }
+        @keyframes gd-tumble {
+          0% { transform: rotateX(0deg) rotateY(0deg); }
+          30% { transform: rotateX(480deg) rotateY(600deg); }
+          70% { transform: rotateX(960deg) rotateY(1080deg); }
+          100% { transform: rotateX(1080deg) rotateY(1440deg); }
+        }
         @keyframes gd-shadow {
           0%, 55%, 100% { transform: scale(1); opacity: 1; }
           25% { transform: scale(.7); opacity: .5; }
           78% { transform: scale(.9); opacity: .8; }
         }
-        @keyframes gd-pulse { 50% { box-shadow: 0 0 0 3px var(--c), 0 0 26px var(--c); } }
         @media (prefers-reduced-motion: reduce) {
-          .gd-cube, .gd-hop { transition: none; animation: none !important; }
-          .gd-shadow, .gd-ring { animation: none !important; }
+          .gd-hop, .gd-tumble { transition: none; animation: none !important; }
+          .gd-shadow { animation: none !important; }
         }
       `}</style>
 
       <span className="gd-shadow" />
-      <span className="gd-ring" />
       <span className="gd-hop">
-        <span className="gd-cube" style={{ transform: `rotateX(${x + turn}deg) rotateY(${y + turn}deg)` }}>
-          {CUBE.map(([n, t]) => (
-            <span
-              key={n}
-              className={`gd-face f${n}` + (n === 1 && value == null ? ' q' : '')}
-              style={{ transform: `${t} translateZ(calc(var(--size) / 2))` }}
-            >
-              {n === 1 && value == null ? (
-                <span className="gd-q">?</span>
-              ) : (
-                Array.from({ length: 9 }, (_, i) => (
-                  <span key={i} className={'gd-dot' + (DOTS[n].includes(i) ? ' on' : '')} />
-                ))
-              )}
-            </span>
-          ))}
+        <span className={'gd-tumble' + (rolling ? ' rolling' : '')}>
+          <span className="gd-cube" style={{ transform: `rotateX(${x}deg) rotateY(${y}deg)` }}>
+            {CUBE.map(([n, t]) => (
+              <span
+                key={n}
+                className={`gd-face f${n}` + (n === 1 && value == null ? ' q' : '')}
+                style={{ transform: `${t} translateZ(calc(var(--size) / 2))` }}
+              >
+                {n === 1 && value == null ? (
+                  <span className="gd-q">?</span>
+                ) : (
+                  Array.from({ length: 9 }, (_, i) => (
+                    <span key={i} className={'gd-dot' + (DOTS[n].includes(i) ? ' on' : '')} />
+                  ))
+                )}
+              </span>
+            ))}
+          </span>
         </span>
       </span>
     </button>

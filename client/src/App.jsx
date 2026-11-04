@@ -7,6 +7,7 @@ import Bubble from './components/Bubble';
 import HomeMenu from './components/HomeMenu';
 import MatchmakingScreen from './components/MatchmakingScreen';
 import LoginScreen from './components/LoginScreen';
+import GameExitButton from './components/GameExitButton';
 
 const AUTO_MOVE_SINGLE = true; // auto-play when only one token can move
 const TURN_SECONDS = 20;
@@ -397,28 +398,7 @@ export default function App() {
       {inGame && (
         <div className="game">
           {status === 'playing' && (
-            <div className="game-top">
-              <button
-                className="exit-btn"
-              onClick={() => setLeaveOpen(true)}
-              aria-label="Leave game"
-            >
-              <svg
-                viewBox="0 0 24 24"
-              width="18"
-              height="18"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" />
-                <path d="M10 17l-5-5 5-5" />
-                <path d="M5 12h11" />
-              </svg>
-            </button>
-            </div>
+            <GameExitButton onClick={() => setLeaveOpen(true)} />
           )}
 
           <div className="prow">{colorsInRow('top').map(renderSlot)}</div>
