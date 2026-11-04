@@ -1,16 +1,35 @@
-# React + Vite
+# Ludo
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## Local development
 
-Currently, two official plugins are available:
+Run the game server and client in separate terminals:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```powershell
+cd server
+npm install
+npm start
+```
 
-## React Compiler
+```powershell
+cd client
+npm install
+Copy-Item .env.example .env
+npm run dev
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+The local `.env` should point `VITE_SERVER_URL` to `http://localhost:3001`.
 
-## Expanding the ESLint configuration
+## Deployment
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Deploy the `server` directory to a Node.js host that supports persistent
+Socket.IO connections and WebSockets (for example, Render). Set its start
+command to `npm start`; the server listens on the host-provided `PORT`.
+
+Deploy the `client` directory to Vercel. In the Vercel project's environment
+variables, set `VITE_SERVER_URL` to the public base URL of the deployed game
+server, such as `https://your-ludo-server.onrender.com` (no `/socket.io` path).
+Then redeploy the client, since Vite embeds this value at build time.
+
+Do not set `VITE_SERVER_URL` to the Vercel frontend URL. Vercel serves the
+client, while the separate game server owns the Socket.IO sessions; routing
+Socket.IO polling requests to the frontend can produce HTTP 400 responses.

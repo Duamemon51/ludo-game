@@ -116,6 +116,12 @@ button { touch-action: manipulation; font-family: inherit; }
 }
 
 /* ===== Board (raised 3D frame) ===== */
+.board-orientation {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  transform: rotate(var(--board-rotation, 0deg));
+}
 .board {
   display: block;
   width: min(100%, max(280px, calc(100dvh - 300px)));

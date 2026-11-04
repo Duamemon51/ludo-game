@@ -18,6 +18,14 @@ const SLOTS = {
   blue: { vertical: 'bottom', side: 'left' },
   yellow: { vertical: 'bottom', side: 'right' },
 };
+const BOARD_ROTATION = { red: -90, green: 90, blue: 0, yellow: 0 };
+const rotateSlot = ({ vertical, side }, degrees) => {
+  let row = vertical === 'top' ? 0 : 1;
+  let column = side === 'left' ? 0 : 1;
+  if (degrees === 90) [row, column] = [column, 1 - row];
+  if (degrees === -90) [row, column] = [1 - column, row];
+  return { vertical: row === 0 ? 'top' : 'bottom', side: column === 0 ? 'left' : 'right' };
+};
 
 export default function App() {
   const [connected, setConnected] = useState(socket.connected && navigator.onLine);
@@ -251,6 +259,15 @@ export default function App() {
     : '';
 
   const inGame = Boolean(game && (status === 'playing' || status === 'over'));
+  const boardRotation = BOARD_ROTATION[myColor] ?? 0;
+  const panelSlots = Object.fromEntries(
+    Object.entries(SLOTS).map(([color, slot]) => [color, rotateSlot(slot, boardRotation)])
+  );
+  const colorsInRow = (vertical) =>
+    Object.entries(panelSlots)
+      .filter(([, slot]) => slot.vertical === vertical)
+      .sort(([, a], [, b]) => a.side.localeCompare(b.side))
+      .map(([color]) => color);
   const myTurn = connected && status === 'playing' && game && game.turn === myColor;
   const canRoll = Boolean(myTurn && (game.phase === 'roll' || game.phase === 'bonus-roll'));
   const movable = myTurn && game.phase === 'move'
@@ -267,8 +284,8 @@ export default function App() {
       <PlayerPanel
         key={color}
         seat={seat}
-        vertical={SLOTS[color].vertical}
-        side={SLOTS[color].side}
+        vertical={panelSlots[color].vertical}
+        side={panelSlots[color].side}
         active={active}
         isMe={color === myColor}
         pct={pct}
@@ -419,26 +436,21 @@ export default function App() {
             </div>
           )}
 
-          <div className="prow">
-            {renderSlot('red')}
-            {renderSlot('green')}
-          </div>
+          <div className="prow">{colorsInRow('top').map(renderSlot)}</div>
 
           <Board
             tokens={game.tokens}
             lastMove={game.lastMove}
             turn={status === 'playing' ? game.turn : null}
             myColor={myColor}
+            rotation={boardRotation}
             movable={movable}
             diceOptions={diceOptions}
             rollId={game.rollId}
             onMove={(idx, diceId) => socket.emit('move_token', { tokenIdx: idx, diceId })}
           />
 
-          <div className="prow">
-            {renderSlot('blue')}
-            {renderSlot('yellow')}
-          </div>
+          <div className="prow">{colorsInRow('bottom').map(renderSlot)}</div>
 
         </div>
       )}

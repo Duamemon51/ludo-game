@@ -32,7 +32,9 @@ const centroid = (points) => {
 // A token that reached the middle square of the board is home
 const isHome = (t) => t.x > 6.05 && t.x < 8.95 && t.y > 6.05 && t.y < 8.95;
 
-export default function Board({ tokens, lastMove, turn, myColor, movable, diceOptions, rollId, onMove }) {
+export default function Board({
+  tokens, lastMove, turn, myColor, rotation = 0, movable, diceOptions, rollId, onMove,
+}) {
   // `shown` follows `tokens` one square at a time, so tokens hop like in real Ludo
   const [shown, setShown] = useState(tokens);
   const [kill, setKill] = useState(null);
@@ -191,6 +193,7 @@ export default function Board({ tokens, lastMove, turn, myColor, movable, diceOp
 
   return (
     <>
+    <div className="board-orientation" style={{ '--board-rotation': `${rotation}deg` }}>
     <svg viewBox="0 0 15 15" className={`board${kill ? ' shake' : ''}`}>
       <rect width="15" height="15" fill="#fff" />
 
@@ -386,6 +389,7 @@ export default function Board({ tokens, lastMove, turn, myColor, movable, diceOp
         );
       })}
     </svg>
+    </div>
     {announce && <div key={announce.sequence} className="kill-text" aria-hidden="true">KILL! 💥</div>}
     </>
   );
