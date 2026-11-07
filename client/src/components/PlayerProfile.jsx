@@ -19,9 +19,8 @@ export default function PlayerProfile({ seat, isMe, pct, onChat }) {
         {isMe && <span className="chat-badge">💬</span>}
       </button>
 
-      <div className="pname">
-        {seat.name}
-        {isMe ? ' (you)' : ''}
+      <div className={`pname${isMe ? ' player-name-you' : ''}`} title={isMe ? undefined : seat.name}>
+        {isMe ? 'You' : seat.name}
       </div>
     </div>
   );

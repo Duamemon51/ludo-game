@@ -1,4 +1,3 @@
-import { useState } from "react";
 import HomeDice from "./HomeDice";
 
 const COLORS = { red: ["#e53935", "#8e1b1b"], green: ["#3fa34d", "#17531f"], yellow: ["#fcc419", "#9a6f00"], blue: ["#1e88e5", "#0b3f8c"] };
@@ -8,7 +7,7 @@ const Pawn = ({ k }) => <span className="lh-pawn" style={{ "--pc": COLORS[k][0],
 export default function HomeMenu({
   name, onNameChange, onFindMatch, onCreateRoom, joinCode, onJoinCodeChange, onJoinRoom,
 }) {
-  const [mode, setMode] = useState(4);
+  const mode = 2;
   const initial = (name || "?").trim().charAt(0).toUpperCase() || "?";
 
   return (
@@ -209,11 +208,6 @@ export default function HomeMenu({
       </main>
 
       <section className="lh-sheet">
-        <div className="lh-seg" role="group" aria-label="Number of players">
-          <button aria-pressed={mode === 2} onClick={() => setMode(2)}>1 vs 1</button>
-          <button aria-pressed={mode === 4} onClick={() => setMode(4)}>4 players</button>
-        </div>
-
         <button className="lh-play" onClick={() => onFindMatch(mode)}>Play now</button>
         <p className="lh-note">No one joins in 8 seconds? Bots take the empty seats.</p>
 

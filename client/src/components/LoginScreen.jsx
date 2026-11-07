@@ -31,11 +31,9 @@ const Yard = ({ pos, c, d }) => (
   </span>
 );
 
-export default function LoginScreen({ onSignIn, onContinueAsGuest }) {
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [email, setEmail] = useState('');
+export default function LoginScreen({ onSignIn, loading = false, error = '' }) {
+  const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
 
   return (
     <main className="ls">
@@ -152,14 +150,27 @@ export default function LoginScreen({ onSignIn, onContinueAsGuest }) {
           box-shadow: inset 0 0 0 2px rgba(255,255,255,.55), inset 0 -3px 0 rgba(0,0,0,.12), 0 5px 0 var(--gold-d), 0 10px 14px rgba(0,0,0,.3); }
         .ls-btn.gold:active { box-shadow: inset 0 0 0 2px rgba(255,255,255,.55), 0 1px 0 var(--gold-d), 0 3px 6px rgba(0,0,0,.3); }
         .ls-btn:disabled { cursor: not-allowed; filter: grayscale(.5); opacity: .6; transform: none; }
-        .ls-btn:focus-visible, .ls-link:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
-        .ls-link { min-height: 44px; border: 0; background: none; cursor: pointer; font: inherit; font-size: 15px; font-weight: 700; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+        .ls-btn:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
         .ls-note { margin: -2px 0 0; font-size: 12px; font-weight: 500; line-height: 1.4; color: var(--muted); text-align: center; }
-        .ls-or { display: flex; align-items: center; gap: 10px; font-family: 'Lilita One', sans-serif; font-size: 15px; color: var(--muted); }
-        .ls-or::before, .ls-or::after { content: ""; flex: 1; height: 9px; border-radius: 3px; box-shadow: 0 0 0 2px #5b3a1e, 0 2px 3px rgba(0,0,0,.25);
-          background: repeating-linear-gradient(90deg, #e53935 0 9px, transparent 9px 11px, #3fa34d 11px 20px, transparent 20px 22px, #fcc419 22px 31px, transparent 31px 33px, #1e88e5 33px 42px, transparent 42px 44px); }
+        .ls-note[role="alert"] { color: #b42318; font-weight: 700; }
+        .ls-owner-link { min-height: 38px; border: 0; background: none; color: var(--muted); cursor: pointer; font: inherit; font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+        .ls-owner-link:focus-visible { outline: 3px solid #1e88e5; outline-offset: 2px; border-radius: 4px; }
 
-        @media (max-height: 720px) { .ls-title { font-size: 42px; } .ls-in { gap: 10px; } }
+        @media (max-height: 720px) {
+          .ls { padding: 10px 12px; }
+          .ls-card { padding: 10px; }
+          .ls-in { gap: 8px; padding: 14px 14px 34px; }
+          .ls-dice { margin: 0 0 4px; }
+          .ls-heading { margin-top: 5px; }
+          .ls-title { font-size: 42px; }
+          .ls-field input { min-height: 44px; }
+          .ls-btn.gold { min-height: 50px; }
+        }
+        @media (max-width: 480px) {
+          .ls { width: 100%; }
+          .ls-card { width: 100%; }
+          .ls-yard.bl, .ls-yard.br { display: none; }
+        }
         @media (prefers-reduced-motion: reduce) { .ls-cube, .ls-btn { transition: none; } }
       `}</style>
 
@@ -175,7 +186,7 @@ export default function LoginScreen({ onSignIn, onContinueAsGuest }) {
         className="ls-card"
         onSubmit={(event) => {
           event.preventDefault();
-          onSignIn(isSignUp ? 'sign up' : 'sign in');
+          onSignIn({ loginId, password });
         }}
       >
         <i className="ls-screw" /><i className="ls-screw" /><i className="ls-screw" /><i className="ls-screw" />
@@ -193,48 +204,25 @@ export default function LoginScreen({ onSignIn, onContinueAsGuest }) {
               <span style={{ '--c': '#fcc419', '--d': '#9a6f00' }}>d</span>
               <span style={{ '--c': '#1e88e5', '--d': '#0b3f8c' }}>o</span>
             </h1>
-            <h2 className="ls-heading">{isSignUp ? 'Create account' : 'Welcome back'}</h2>
+            <h2 className="ls-heading">Welcome back</h2>
           </div>
-          <p className="ls-desc">{isSignUp ? 'Sign up to start playing.' : 'Sign in to get back in the game.'}</p>
+          <p className="ls-desc">Sign in to get back in the game.</p>
 
           <div className="ls-field">
-            <label htmlFor="login-email">Email</label>
-            <input id="login-email" type="email" autoComplete="email" placeholder="you@example.com"
-              value={email} onChange={(event) => setEmail(event.target.value)} required />
+            <label htmlFor="login-id">Login ID</label>
+            <input id="login-id" type="text" autoComplete="username" placeholder="Enter your Login ID"
+              value={loginId} onChange={(event) => setLoginId(event.target.value)} required />
           </div>
           <div className="ls-field">
             <label htmlFor="login-password">Password</label>
-            <input id="login-password" type="password" autoComplete={isSignUp ? 'new-password' : 'current-password'}
-              placeholder={isSignUp ? 'Create a password' : 'Enter your password'}
-              value={password} onChange={(event) => setPassword(event.target.value)}
-              minLength={isSignUp ? 8 : undefined} required />
+            <input id="login-password" type="password" autoComplete="current-password"
+              placeholder="Enter your password"
+              value={password} onChange={(event) => setPassword(event.target.value)} required />
           </div>
 
-          {isSignUp && (
-            <>
-              <div className="ls-field">
-                <label htmlFor="login-confirm-password">Confirm password</label>
-                <input id="login-confirm-password" type="password" autoComplete="new-password"
-                  placeholder="Re-enter your password" value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)} minLength={8} required />
-              </div>
-              {confirmPassword && password !== confirmPassword && (
-                <p className="ls-validation" role="status">Passwords don’t match.</p>
-              )}
-            </>
-          )}
-
-          <button className="ls-btn gold" type="submit" disabled={isSignUp && password !== confirmPassword}>
-            {isSignUp ? 'Create account' : 'Sign in'}
-          </button>
-          <p className="ls-note">
-            {isSignUp ? 'Sign-up is a UI preview and doesn’t create an account yet.' : 'Sign-in is a UI preview and doesn’t authenticate yet.'}
-          </p>
-
-          <div className="ls-or">or</div>
-          <button className="ls-btn" type="button" onClick={onContinueAsGuest}>Continue as guest</button>
-          <button className="ls-link" type="button" onClick={() => setIsSignUp((value) => !value)}>
-            {isSignUp ? 'Already have an account? Sign in' : 'New here? Create an account'}
+          {error && <p className="ls-note" role="alert">{error}</p>}
+          <button className="ls-btn gold" type="submit" disabled={loading}>
+            {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </div>
       </form>

@@ -4,14 +4,18 @@ import Board from './components/Board';
 import PlayerPanel from './components/PlayerPanel';
 import ChatSheet from './components/ChatSheet';
 import Bubble from './components/Bubble';
-import HomeMenu from './components/HomeMenu';
+import PlayerHome from './components/PlayerHome';
 import MatchmakingScreen from './components/MatchmakingScreen';
 import LoginScreen from './components/LoginScreen';
+import MasterDashboard from './components/MasterDashboard';
+import SuperAdminDashboard from './components/SuperAdminDashboard';
 import GameExitButton from './components/GameExitButton';
+import { signIn } from './authApi';
 
 const AUTO_MOVE_SINGLE = true; // auto-play when only one token can move
 const TURN_SECONDS = 20;
 const BUBBLE_MS = 4500;
+const RESULT_REVEAL_MS = 2600;
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const urlCode = (new URLSearchParams(window.location.search).get('room') || '').toUpperCase();
 
@@ -23,6 +27,18 @@ const SLOTS = {
   yellow: { vertical: 'bottom', side: 'right' },
 };
 const BOARD_ROTATION = { red: -90, green: 90, blue: 0, yellow: 0 };
+const AUTH_STORAGE_KEY = 'ludo-auth-session';
+const readAuthSession = () => {
+  const savedSession = localStorage.getItem(AUTH_STORAGE_KEY);
+  if (!savedSession) return null;
+  try {
+    const session = JSON.parse(savedSession);
+    if (session?.token && ['PLAYER', 'MASTER', 'SUPER_ADMIN'].includes(session.account?.role)) return session;
+  } catch {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+  }
+  return null;
+};
 const rotateSlot = ({ vertical, side }, degrees) => {
   let row = vertical === 'top' ? 0 : 1;
   let column = side === 'left' ? 0 : 1;
@@ -33,8 +49,13 @@ const rotateSlot = ({ vertical, side }, degrees) => {
 
 export default function App() {
   const [connected, setConnected] = useState(socket.connected && navigator.onLine);
-  const [status, setStatus] = useState('idle'); // idle | queued | lobby | playing | over
-  const [homeView, setHomeView] = useState(urlCode ? 'menu' : 'login');
+  const [status, setStatus] = useState('idle'); // idle | queued | lobby | playing | finishing | over
+  const [authSession, setAuthSession] = useState(readAuthSession);
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [homeView, setHomeView] = useState(() => (
+    urlCode || authSession?.account.role === 'PLAYER' ? 'menu' : 'login'
+  ));
   const [myColor, setMyColor] = useState(null);
   const [game, setGame] = useState(null);
   const [lobby, setLobby] = useState(null);
@@ -44,6 +65,7 @@ export default function App() {
   const [leaving, setLeaving] = useState(false);
   const [joinCode, setJoinCode] = useState(urlCode);
   const [notice, setNotice] = useState('');
+  const [noticeDetails, setNoticeDetails] = useState(null);
   const [secondsLeft, setSecondsLeft] = useState(null);
   const [queueEnd, setQueueEnd] = useState(null);
   const [queueLeft, setQueueLeft] = useState(0);
@@ -51,6 +73,10 @@ export default function App() {
     () => localStorage.getItem('ludo-name') || 'Player' + Math.floor(100 + Math.random() * 900)
   );
   const autoJoined = useRef(false);
+  const matchmakingRequestRef = useRef(null);
+  const cancelledMatchmakingRef = useRef(false);
+  const resultTimerRef = useRef(null);
+  const noticeTimerRef = useRef(null);
   const statusRef = useRef(status);
   statusRef.current = status;
   const diceOptions = game?.diceOptions || (
@@ -59,8 +85,54 @@ export default function App() {
   const usableDiceOptions = diceOptions.filter((option) => option.moves.length > 0);
 
   const showNotice = (msg) => {
-    setNotice(msg);
-    setTimeout(() => setNotice(''), 5000);
+    const details = typeof msg === 'string'
+      ? { title: 'Notice', message: msg, type: 'info' }
+      : {
+          title: msg?.title || 'Game update',
+          message: msg?.message || '',
+          type: msg?.type || 'info',
+        };
+    if (!details.message) return;
+        clearTimeout(noticeTimerRef.current);
+        setNoticeDetails(details);
+        setNotice(details.message);
+        noticeTimerRef.current = setTimeout(() => {
+          setNotice('');
+          setNoticeDetails(null);
+          noticeTimerRef.current = null;
+        }, 5000);
+  };
+
+  const handleSignIn = async ({ loginId, password }) => {
+    setLoginLoading(true);
+    setLoginError('');
+    try {
+      const result = await signIn(loginId, password);
+      const session = { token: result.token, account: result.account };
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+      setAuthSession(session);
+      if (result.account.role === 'PLAYER') {
+        setName(result.account.name);
+        localStorage.setItem('ludo-name', result.account.name);
+        setHomeView('menu');
+        window.history.replaceState(null, '', '/');
+      } else {
+        const route = result.account.role === 'MASTER' ? '/master' : '/superadmin';
+        window.history.replaceState(null, '', route);
+      }
+    } catch (error) {
+      setLoginError(error.message);
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const signOut = () => {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+    setAuthSession(null);
+    setLoginError('');
+    setHomeView('login');
+    window.history.replaceState(null, '', '/');
   };
 
   useEffect(() => {
@@ -75,13 +147,20 @@ export default function App() {
       if (socket.connected) socket.emit('resume_game');
     };
     const onNoGame = () => {
-      if (statusRef.current === 'over') return; // keep the winner screen visible
+      if (statusRef.current === 'over' || statusRef.current === 'finishing') return;
       if (statusRef.current === 'playing') showNotice('Your game has ended.');
       setStatus('idle');
       setGame(null);
       setLobby(null);
     };
-    const onQueued = ({ waitMs }) => {
+    const onQueued = ({ waitMs, requestId }) => {
+      if (
+        cancelledMatchmakingRef.current
+        || (requestId && requestId !== matchmakingRequestRef.current)
+      ) {
+        socket.emit('cancel_match', { requestId });
+        return;
+      }
       setStatus('queued');
       setQueueEnd(Date.now() + waitMs);
     };
@@ -89,7 +168,17 @@ export default function App() {
       setLobby(data);
       setStatus('lobby');
     };
-    const onMatch = ({ yourColor }) => {
+    const onMatch = ({ yourColor, requestId }) => {
+      if (
+        requestId
+        && (cancelledMatchmakingRef.current || requestId !== matchmakingRequestRef.current)
+      ) {
+        socket.emit('cancel_match', { requestId });
+        return;
+      }
+      matchmakingRequestRef.current = null;
+      cancelledMatchmakingRef.current = false;
+      clearTimeout(resultTimerRef.current);
       setMyColor(yourColor);
       setHomeView('menu');
       setLobby(null);
@@ -101,7 +190,11 @@ export default function App() {
         ...state,
         localDeadline: state.timeLeftMs != null ? Date.now() + state.timeLeftMs : null,
       });
-    const onOver = () => setStatus('over');
+    const onOver = () => {
+      clearTimeout(resultTimerRef.current);
+      setStatus('finishing');
+      resultTimerRef.current = setTimeout(() => setStatus('over'), RESULT_REVEAL_MS);
+    };
     const onChat = (m) => {
       const key = m.color || m.from;
       setBubbles((prev) => ({ ...prev, [key]: { id: m.id, text: m.text } }));
@@ -146,6 +239,8 @@ export default function App() {
       socket.off('notice', showNotice);
       socket.off('game_over', onOver);
       socket.off('chat_message', onChat);
+      clearTimeout(resultTimerRef.current);
+      clearTimeout(noticeTimerRef.current);
     };
   }, []);
 
@@ -197,6 +292,7 @@ export default function App() {
   useEffect(() => {
     if (!AUTO_MOVE_SINGLE || !connected || status !== 'playing' || !game) return;
     if (game.turn !== myColor || game.phase !== 'move' || game.doubleRoll) return;
+    if (game.seats?.some((seat) => seat.color === myColor && seat.isBot)) return;
     const options = (game.diceOptions || (
       game.dice != null ? [{ id: 0, value: game.dice, moves: game.validMoves || [] }] : []
     )).filter((option) => option.moves.length > 0);
@@ -215,14 +311,21 @@ export default function App() {
     localStorage.setItem('ludo-name', clean);
     return clean;
   };
-  const findMatch = (mode) => socket.emit('find_match', { mode, name: cleanName() });
+  const findMatch = (_bet, queueType = 'normal') => {
+    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    matchmakingRequestRef.current = requestId;
+    cancelledMatchmakingRef.current = false;
+    socket.emit('find_match', { mode: 2, name: cleanName(), requestId, queueType });
+  };
   const createRoom = (mode) => socket.emit('create_room', { mode, name: cleanName() });
   const joinRoom = () => {
     if (joinCode.trim().length < 3) return showNotice('Enter the room code first.');
     socket.emit('join_room', { code: joinCode.trim(), name: cleanName() });
   };
   const cancel = () => {
-    socket.emit('cancel_match');
+    cancelledMatchmakingRef.current = true;
+    socket.emit('cancel_match', { requestId: matchmakingRequestRef.current });
+    matchmakingRequestRef.current = null;
     setStatus('idle');
   };
   const leaveLobby = () => {
@@ -231,6 +334,7 @@ export default function App() {
     setStatus('idle');
   };
   const reset = () => {
+    clearTimeout(resultTimerRef.current);
     setGame(null);
     setMyColor(null);
     setStatus('idle');
@@ -264,8 +368,8 @@ export default function App() {
       encodeURIComponent(`Play Ludo with me! Room code: ${lobby.code}\n${shareLink}`)
     : '';
 
-  const inGame = Boolean(game && (status === 'playing' || status === 'over'));
-  const homeScreen = connected && status === 'idle';
+  const inGame = Boolean(game && ['playing', 'finishing', 'over'].includes(status));
+  const homeScreen = connected && (status === 'idle' || status === 'queued');
   const boardRotation = BOARD_ROTATION[myColor] ?? 0;
   const panelSlots = Object.fromEntries(
     Object.entries(SLOTS).map(([color, slot]) => [color, rotateSlot(slot, boardRotation)])
@@ -276,7 +380,7 @@ export default function App() {
       .sort(([, a], [, b]) => a.side.localeCompare(b.side))
       .map(([color]) => color);
   const myTurn = connected && status === 'playing' && game && game.turn === myColor;
-  const canRoll = Boolean(myTurn && (game.phase === 'roll' || game.phase === 'bonus-roll'));
+  const canRoll = Boolean(myTurn && ['roll', 'bonus-roll', 'capture-roll'].includes(game.phase));
   const movable = myTurn && game.phase === 'move'
     ? [...new Set(usableDiceOptions.flatMap((option) => option.moves))]
     : [];
@@ -299,36 +403,85 @@ export default function App() {
         dice={game.dice}
         diceRollId={game.dieRollId}
         canRoll={canRoll}
-        onRoll={() => socket.emit(game.phase === 'bonus-roll' ? 'roll_bonus_dice' : 'roll_dice')}
+        onRoll={() => socket.emit(
+          game.phase === 'bonus-roll'
+            ? 'roll_bonus_dice'
+            : game.phase === 'capture-roll'
+              ? 'roll_capture_bonus'
+              : 'roll_dice'
+        )}
         onChat={() => setChatOpen(true)}
         bubble={bubbles[color]}
       />
     );
   };
 
-  return (
-    <div className={'app' + (homeScreen ? ' home-screen' : '') + (inGame ? ' in-game' : '') + (inGame && game.seats.length === 4 ? ' four-player' : '')}>
-      {notice && <div className="toast">{notice}</div>}
+  const currentPath = window.location.pathname.replace(/\/+$/, '');
+  if (currentPath === '/master') {
+    if (authSession?.account.role !== 'MASTER') {
+      return <LoginScreen onSignIn={handleSignIn} loading={loginLoading} error={loginError} />;
+    }
+    return (
+      <MasterDashboard
+        token={authSession.token}
+        onBack={signOut}
+      />
+    );
+  }
 
-      {!connected && !inGame && <div className="card">Connecting to server...</div>}
+  if (currentPath === '/superadmin') {
+    if (authSession?.account.role !== 'SUPER_ADMIN') {
+      return <LoginScreen onSignIn={handleSignIn} loading={loginLoading} error={loginError} />;
+    }
+    return <SuperAdminDashboard token={authSession.token} onSignOut={signOut} />;
+  }
+
+  return (
+    <div className={'app' + (homeScreen ? ' home-screen' : '') + (inGame ? ' in-game' : '') + (homeView === 'login' ? ' login-screen' : '')}>
+      {notice && (
+        <div className={`toast toast-${noticeDetails?.type || 'info'}`} role="status" aria-live="polite">
+          <span className="toast-icon" aria-hidden="true">
+            {noticeDetails?.type === 'success' ? '✓' : noticeDetails?.type === 'warning' ? '!' : 'i'}
+          </span>
+          <span className="toast-copy">
+            <strong>{noticeDetails?.title || 'Notice'}</strong>
+            <span>{noticeDetails?.message || notice}</span>
+          </span>
+          <button
+            className="toast-close"
+            type="button"
+            aria-label="Dismiss notification"
+            onClick={() => {
+              clearTimeout(noticeTimerRef.current);
+              noticeTimerRef.current = null;
+              setNotice('');
+              setNoticeDetails(null);
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      {!connected && !inGame && homeView !== 'master' && homeView !== 'login' && homeView !== 'menu' && <div className="card">Connecting to server...</div>}
       {!connected && inGame && <div className="reconnect-banner">Connection lost. Reconnecting...</div>}
 
-      {connected && status === 'idle' && homeView === 'login' && (
+      {status === 'idle' && homeView === 'login' && (
         <LoginScreen
-          onSignIn={(action) => showNotice(`${action} is not connected yet. Continue as guest to play.`)}
-          onContinueAsGuest={() => setHomeView('menu')}
+          onSignIn={handleSignIn}
+          loading={loginLoading}
+          error={loginError}
         />
       )}
 
-      {connected && status === 'idle' && homeView === 'menu' && (
-        <HomeMenu
+      {(status === 'idle' || status === 'queued') && homeView === 'menu' && (
+        <PlayerHome
           name={name}
           onNameChange={setName}
           onFindMatch={findMatch}
-          onCreateRoom={createRoom}
-          joinCode={joinCode}
-          onJoinCodeChange={setJoinCode}
-          onJoinRoom={joinRoom}
+          token={authSession.token}
+          onSignOut={signOut}
+          connected={connected}
         />
       )}
 
@@ -401,11 +554,13 @@ export default function App() {
             <GameExitButton onClick={() => setLeaveOpen(true)} />
           )}
 
-          <div className="prow">{colorsInRow('top').map(renderSlot)}</div>
+          <div className="prow prow-top">{colorsInRow('top').map(renderSlot)}</div>
 
           <Board
             tokens={game.tokens}
+            captures={game.captures}
             lastMove={game.lastMove}
+            celebrateWinner={status === 'finishing' ? game.winner : null}
             turn={status === 'playing' ? game.turn : null}
             myColor={myColor}
             rotation={boardRotation}
@@ -415,7 +570,7 @@ export default function App() {
             onMove={(idx, diceId) => socket.emit('move_token', { tokenIdx: idx, diceId })}
           />
 
-          <div className="prow">{colorsInRow('bottom').map(renderSlot)}</div>
+          <div className="prow prow-bottom">{colorsInRow('bottom').map(renderSlot)}</div>
 
         </div>
       )}
@@ -453,14 +608,19 @@ export default function App() {
       {leaveOpen && status === 'playing' && (
         <div className="overlay" onClick={() => setLeaveOpen(false)}>
           <div className="card center quit-card" onClick={(e) => e.stopPropagation()}>
-            <div className="quit-icon">🚪</div>
+            <div className="quit-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 21h14M7 21V4.8a1.8 1.8 0 0 1 1.45-1.76l7-1.4A1.8 1.8 0 0 1 17.6 3.4V21" />
+                <path d="M13.5 11.5h.01" />
+              </svg>
+            </div>
             <h2>Quit game?</h2>
             <p className="hint">Agar aap nikle to game haar jayega aur bot aapki jagah le lega.</p>
-            <div className="row">
-              <button className="btn alt" onClick={leaveGame} disabled={!connected || leaving}>
+            <div className="quit-actions">
+              <button className="btn quit-confirm" onClick={leaveGame} disabled={!connected || leaving}>
                 {leaving ? 'Leaving...' : 'Quit'}
               </button>
-              <button className="btn green" onClick={() => setLeaveOpen(false)}>Stay</button>
+              <button className="btn quit-stay" onClick={() => setLeaveOpen(false)}>Stay</button>
             </div>
           </div>
         </div>

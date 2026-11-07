@@ -30,7 +30,7 @@ export const PATH = [
   [7, 0], [6, 0],
 ];
 
-// Home lane squares (engine positions 51-55) as [row, col]
+// Home lane squares (engine positions 52-56) as [row, col]
 export const LANES = {
   red: [[7, 1], [7, 2], [7, 3], [7, 4], [7, 5]],
   green: [[1, 7], [2, 7], [3, 7], [4, 7], [5, 7]],
@@ -62,18 +62,18 @@ export function layoutTokens(tokens) {
       let x, y;
       if (pos === -1) {
         [x, y] = BASE_SPOTS[color][idx];
-      } else if (pos <= 50) {
+      } else if (pos <= 51) {
         const [r, c] = PATH[(START[color] + pos) % 52];
         x = c + 0.5;
         y = r + 0.5;
-      } else if (pos <= 55) {
-        const [r, c] = LANES[color][pos - 51];
+      } else if (pos <= 56) {
+        const [r, c] = LANES[color][pos - 52];
         x = c + 0.5;
         y = r + 0.5;
       } else {
         [x, y] = FINISH_XY[color];
       }
-      items.push({ color, idx, pos, x, y, scale: pos === 56 ? 0.6 : 1 });
+      items.push({ color, idx, pos, x, y, scale: pos === 57 ? 0.6 : 1 });
     });
   }
 
@@ -85,7 +85,7 @@ export function layoutTokens(tokens) {
   Object.values(groups).forEach((g) => {
     if (g.length < 2) return;
     g.forEach((t, i) => {
-      if (t.pos === 56) {
+      if (t.pos === 57) {
         const offset = (i - (g.length - 1) / 2) * 0.24;
         if (t.color === 'red' || t.color === 'yellow') t.y += offset;
         else t.x += offset;

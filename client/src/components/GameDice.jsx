@@ -21,14 +21,13 @@ const ROLL_MS = 500;
 
 export default function GameDice({ value, color, canRoll, onRoll, rollId }) {
   const [settledRoll, setSettledRoll] = useState(null);
-  const rollKey = `${rollId ?? ''}:${value ?? ''}`;
-  const rolling = value != null && settledRoll !== rollKey;
+  const rolling = value != null && settledRoll !== rollId;
 
   useEffect(() => {
-    if (value == null) return;
-    const land = setTimeout(() => setSettledRoll(rollKey), ROLL_MS);
+    if (value == null || rollId == null) return;
+    const land = setTimeout(() => setSettledRoll(rollId), ROLL_MS);
     return () => clearTimeout(land);
-  }, [value, rollId, rollKey]);
+  }, [rollId]);
   const [x, y] = TURN[value ?? 1];
 
   return (

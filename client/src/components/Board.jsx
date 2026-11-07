@@ -33,7 +33,7 @@ const centroid = (points) => {
 const isHome = (t) => t.x > 6.05 && t.x < 8.95 && t.y > 6.05 && t.y < 8.95;
 
 export default function Board({
-  tokens, lastMove, turn, myColor, rotation = 0, movable, diceOptions, rollId, onMove,
+  tokens, captures = {}, lastMove, celebrateWinner, turn, myColor, rotation = 0, movable, diceOptions, rollId, onMove,
 }) {
   // `shown` follows `tokens` one square at a time, so tokens hop like in real Ludo
   const [shown, setShown] = useState(tokens);
@@ -59,7 +59,9 @@ export default function Board({
             const target = tokens[color][i];
             if (p === target) return p;
             changed = true;
+            if (captures[color] > 0 && p === 50 && target > 51) return 52;
             if (p >= 0 && target > p) return p + 1; // hop forward one square
+            if (p >= 46 && target < 6) return (p + 1) % 52;
             return target;                          // leaving base or captured: jump
           });
         }
@@ -67,7 +69,7 @@ export default function Board({
       });
     }, HOP_MS);
     return () => clearInterval(id);
-  }, [tokens]);
+  }, [tokens, captures, lastMove]);
 
   useEffect(() => {
     if (lastMove?.id != null && lastMove.id !== lastMoveId.current) {
@@ -194,7 +196,7 @@ export default function Board({
   return (
     <>
     <div className="board-orientation" style={{ '--board-rotation': `${rotation}deg` }}>
-    <svg viewBox="0 0 15 15" className={`board${kill ? ' shake' : ''}`}>
+    <svg viewBox="0 0 15 15" className={`board${kill ? ' shake' : ''}${celebrateWinner ? ' win-shake' : ''}`}>
       <rect width="15" height="15" fill="#fff" />
 
       {/* Home bases */}
@@ -248,6 +250,26 @@ export default function Board({
         ))
       )}
 
+      {/* Home-lane entry stays locked until this player captures an opponent token. */}
+      {Object.keys(captures).filter((color) => captures[color] < 1).map((color) => {
+        const [r, c] = LANES[color][0];
+        return (
+          <g
+            key={`${color}-home-lock`}
+            transform={`translate(${c + 0.5} ${r + 0.5}) scale(0.035) translate(-12 -12)`}
+            pointerEvents="none"
+            fill="none"
+            stroke="#fff"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="9" fill="#3b2412" />
+            <path d="m6 18 12-12" />
+          </g>
+        );
+      })}
+
       {/* Center */}
       {Object.entries(TRIANGLES).map(([color, points]) => (
         <polygon key={color} points={points} fill={COLORS[color]} stroke="#555" strokeWidth="0.04" />
@@ -262,10 +284,11 @@ export default function Board({
         const isCaptured = kill?.id === id;
         const isKiller = kill?.by === id;
         const isHoming = homeFx.some((fx) => fx.id === id);
+        const isWinner = celebrateWinner === t.color && tokens[t.color][t.idx] === 57;
         return (
           <g
             key={t.color + t.idx}
-            className={`token${canMove ? ' movable' : ''}${isCaptured ? ' captured' : ''}${isKiller ? ' killer' : ''}${isHoming ? ' homing' : ''}`}
+            className={`token${canMove ? ' movable' : ''}${isCaptured ? ' captured' : ''}${isKiller ? ' killer' : ''}${isHoming ? ' homing' : ''}${isWinner ? ' winner-token' : ''}`}
             style={{
               transform: `translate(${isCaptured ? kill.x : t.x}px, ${isCaptured ? kill.y : t.y}px)`,
               ...(isCaptured && {
@@ -277,7 +300,12 @@ export default function Board({
             }}
             onClick={canMove ? () => {
               const options = diceOptions.filter((option) => option.moves.includes(t.idx));
-              if (options.length > 1) setChoiceTokenId({ id, rollId });
+              const hasDifferentValues = options.some((option) => option.value !== options[0].value);
+              if (options.length > 1 && hasDifferentValues) {
+                setChoiceTokenId({ id, rollId });
+              } else if (options.length > 0) {
+                onMove(t.idx, options[0].id);
+              }
               else if (options.length === 1) onMove(t.idx, options[0].id);
             } : undefined}
           >
@@ -343,6 +371,24 @@ export default function Board({
           <circle className="kill-burst b2" cx={kill.x} cy={kill.y} r="0.45" />
         </>
       )}
+      {celebrateWinner && (
+        <g className="winner-burst" pointerEvents="none">
+          <circle cx="7.5" cy="7.5" r="0.55" />
+          <circle cx="7.5" cy="7.5" r="0.55" />
+          {Array.from({ length: 12 }, (_, i) => {
+            const angle = (i / 12) * Math.PI * 2;
+            return (
+              <line
+                key={i}
+                x1={7.5 + Math.cos(angle) * 0.9}
+                y1={7.5 + Math.sin(angle) * 0.9}
+                x2={7.5 + Math.cos(angle) * 1.8}
+                y2={7.5 + Math.sin(angle) * 1.8}
+              />
+            );
+          })}
+        </g>
+      )}
 
       {/* Home celebration: triangle flash, shock rings, confetti, HOME! text */}
       {homeFx.map((fx) => {
@@ -391,6 +437,7 @@ export default function Board({
     </svg>
     </div>
     {announce && <div key={announce.sequence} className="kill-text" aria-hidden="true">KILL! 💥</div>}
+    {celebrateWinner && <div key={celebrateWinner} className="winner-text" aria-hidden="true">WIN! 🏆💥</div>}
     </>
   );
 }
