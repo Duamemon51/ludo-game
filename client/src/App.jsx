@@ -70,6 +70,9 @@ const SLOTS = {
   yellow: { vertical: 'bottom', side: 'right' },
 };
 const BOARD_ROTATION = { red: -90, green: 90, blue: 0, yellow: 0 };
+// Mobile seat angles progress counterclockwise, keeping adjacent turns to quarter-turns.
+const MOBILE_BOARD_ROTATION = { red: -90, green: -180, yellow: -270, blue: -360 };
+const MOBILE_LAYOUT_QUERY = '(max-width: 600px)';
 const AUTH_STORAGE_KEY = 'ludo-auth-session';
 const readAuthSession = () => {
   const savedSession = localStorage.getItem(AUTH_STORAGE_KEY);
@@ -85,12 +88,15 @@ const readAuthSession = () => {
 const rotateSlot = ({ vertical, side }, degrees) => {
   let row = vertical === 'top' ? 0 : 1;
   let column = side === 'left' ? 0 : 1;
-  if (degrees === 90) [row, column] = [column, 1 - row];
-  if (degrees === -90) [row, column] = [1 - column, row];
+  const turns = ((degrees / 90) % 4 + 4) % 4;
+  for (let turn = 0; turn < turns; turn += 1) [row, column] = [column, 1 - row];
   return { vertical: row === 0 ? 'top' : 'bottom', side: column === 0 ? 'left' : 'right' };
 };
 
 export default function App() {
+  const [isMobileLayout, setIsMobileLayout] = useState(
+    () => window.matchMedia(MOBILE_LAYOUT_QUERY).matches
+  );
   const [connected, setConnected] = useState(socket.connected && navigator.onLine);
   const [status, setStatus] = useState('idle'); // idle | queued | lobby | playing | finishing | over
   const [authSession, setAuthSession] = useState(readAuthSession);
@@ -129,6 +135,13 @@ export default function App() {
     game?.dice != null ? [{ id: 0, value: game.dice, moves: game.validMoves || [] }] : []
   );
   const usableDiceOptions = diceOptions.filter((option) => option.moves.length > 0);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(MOBILE_LAYOUT_QUERY);
+    const updateLayout = (event) => setIsMobileLayout(event.matches);
+    mediaQuery.addEventListener('change', updateLayout);
+    return () => mediaQuery.removeEventListener('change', updateLayout);
+  }, []);
 
   useEffect(() => {
     const clickSound = new Audio('/sounds/piece-move.mp3');
@@ -452,7 +465,7 @@ export default function App() {
 
   const inGame = Boolean(game && ['playing', 'finishing', 'over'].includes(status));
   const homeScreen = connected && (status === 'idle' || status === 'queued');
-  const boardRotation = BOARD_ROTATION[myColor] ?? 0;
+  const boardRotation = (isMobileLayout ? MOBILE_BOARD_ROTATION : BOARD_ROTATION)[myColor] ?? 0;
   const panelSlots = Object.fromEntries(
     Object.entries(SLOTS).map(([color, slot]) => [color, rotateSlot(slot, boardRotation)])
   );
@@ -712,7 +725,7 @@ export default function App() {
               </svg>
             </div>
             <h2>Quit game?</h2>
-            <p className="hint">Agar aap nikle to game haar jayega aur bot aapki jagah le lega.</p>
+            <p className="hint">Agar aap quit karte hain to game khatam hoga aur opponent winner hoga.</p>
             <div className="quit-actions">
               <button className="btn quit-confirm" onClick={leaveGame} disabled={!connected || leaving}>
                 {leaving ? 'Leaving...' : 'Quit'}

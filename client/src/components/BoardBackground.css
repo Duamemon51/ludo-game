@@ -69,6 +69,14 @@ body::before {
 }
 
 @media (max-width: 600px) {
+  .board-orientation {
+    transition: transform 450ms cubic-bezier(.2, .75, .3, 1);
+  }
+
   .board.shake { animation-duration: 0.24s; }
   .board.win-shake { animation-duration: 0.4s; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-orientation { transition: none; }
 }
