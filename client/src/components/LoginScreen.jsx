@@ -217,8 +217,6 @@ export default function LoginScreen({ onSignIn, loading = false, error = '' }) {
             </h1>
             <h2 className="ls-heading">Welcome back</h2>
           </div>
-          <p className="ls-desc">Sign in to get back in the game.</p>
-
           <div className="ls-field">
             <label htmlFor="login-id">Login ID</label>
             <div className="ls-inp">{UserIcon}<input id="login-id" type="text" autoComplete="username" placeholder="Enter your Login ID"
