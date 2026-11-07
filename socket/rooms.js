@@ -7,11 +7,22 @@ const MODE_COLORS = {
 const TURN_MS = 20000;
 const QUEUE_WAIT_MS = { normal: 15000, tournament: 20000 };
 const SKIP_MS = 1200;
+const MOVE_STEP_MS = 250;
+const MOVE_SETTLE_MS = 350;
 const MAX_MISSED = 1;
 const RECONNECT_MS = 60000; // how long an empty room waits for players to come back
 
+const BOT_NAMES = [
+  'Oliver', 'Ethan', 'Liam', 'Noah', 'Mason', 'Lucas', 'Logan', 'James',
+  'Aiden', 'Henry', 'Jack', 'Owen', 'Leo', 'Miles', 'Elliot', 'Caleb',
+  'Wyatt', 'Julian', 'Isaac', 'Theodore', 'Arthur', 'Finn', 'Jasper',
+  'Ruby', 'Alice', 'Chloe', 'Grace', 'Ella', 'Sophie', 'Hazel', 'Violet',
+  'Lily', 'Mila', 'Nora', 'Stella', 'Ivy', 'Clara', 'Lucy', 'Evelyn',
+  'Harper', 'Willow', 'Aurora', 'Zoe', 'Naomi', 'Freya', 'Quinn',
+];
 const rooms = new Map();
 const sessions = new Map(); // clientId -> roomId (for reconnecting)
+const botNamesByClientId = new Map();
 const queues = { normal: [], tournament: [] };
 const queueTimers = { normal: null, tournament: null };
 let roomCounter = 0;
@@ -70,6 +81,22 @@ function seatOf(room, color) {
   return room.seats.find((s) => s.color === color);
 }
 
+function pickBotName(usedNames) {
+  const availableNames = BOT_NAMES.filter((name) => !usedNames.has(name.toLowerCase()));
+  let name;
+  if (availableNames.length > 0) {
+    name = availableNames[Math.floor(Math.random() * availableNames.length)];
+  } else {
+    let suffix = 2;
+    do {
+      name = `${BOT_NAMES[(suffix - 2) % BOT_NAMES.length]} ${suffix}`;
+      suffix += 1;
+    } while (usedNames.has(name.toLowerCase()));
+  }
+  usedNames.add(name.toLowerCase());
+  return name;
+}
+
 function publicState(room, viewerSocketId) {
   return {
     roomId: room.id,
@@ -79,12 +106,13 @@ function publicState(room, viewerSocketId) {
         color: s.color,
         name: takeoverHidden ? s.baseName : s.name,
         isBot: takeoverHidden ? s.socketId === viewerSocketId : s.isBot,
+        isTakeover: takeoverHidden && s.socketId === viewerSocketId,
       };
     }),
     tokens: room.game.tokens,
     captures: room.game.captures,
     turn: room.game.turn,
-    phase: room.phase, // roll | move | skip | over
+    phase: room.phase, // roll | move | moving | skip | over
     dice: room.dice,
     dieRollId: room.dieRollId,
     doubleRoll: room.doubleRoll,
@@ -275,11 +303,25 @@ function showRollMoves(io, room) {
   broadcast(io, room);
 }
 
+function moveAnimationDuration(from, to, captures) {
+  let position = from;
+  let steps = 0;
+  while (position !== to && steps < 60) {
+    if (captures > 0 && position === 50 && to > 51) position = 52;
+    else if (position >= 0 && to > position) position += 1;
+    else if (position >= 46 && to < 6) position = (position + 1) % 52;
+    else position = to;
+    steps += 1;
+  }
+  return steps * MOVE_STEP_MS + MOVE_SETTLE_MS;
+}
+
 function doMove(io, room, tokenIdx, diceId) {
   const color = room.game.turn;
   const option = room.diceOptions.find((candidate) => candidate.id === diceId);
   if (!option || !option.moves.includes(tokenIdx)) return;
   const dice = option.value;
+  const from = room.game.tokens[color][tokenIdx];
   const previousTokens = Object.fromEntries(
     Object.entries(room.game.tokens).map(([tokenColor, positions]) => [tokenColor, [...positions]])
   );
@@ -317,23 +359,35 @@ function doMove(io, room, tokenIdx, diceId) {
     room.captureBonusSixes = 0;
     room.diceOptions = [];
     room.validMoves = [];
-    room.dice = null;
     room.bonusTurn = false;
-    room.phase = 'capture-roll';
-    schedule(io, room);
-    broadcast(io, room);
-    return;
   }
 
-  if (room.validMoves.length > 0) {
-    room.phase = 'move';
-    schedule(io, room);
-    broadcast(io, room);
-    return;
-  }
+  clearTimeout(room.timer);
+  room.deadline = null;
+  room.dice = dice;
+  room.phase = 'moving';
+  broadcast(io, room);
 
-  engine.nextTurn(room.game, room.bonusTurn);
-  startTurn(io, room);
+  const to = room.game.tokens[color][tokenIdx];
+  room.timer = setTimeout(() => {
+    if (result.captured.length > 0) {
+      room.dice = null;
+      room.phase = 'capture-roll';
+      schedule(io, room);
+      broadcast(io, room);
+      return;
+    }
+
+    if (room.validMoves.length > 0) {
+      room.phase = 'move';
+      schedule(io, room);
+      broadcast(io, room);
+      return;
+    }
+
+    engine.nextTurn(room.game, room.bonusTurn);
+    startTurn(io, room);
+  }, moveAnimationDuration(from, to, room.game.captures[color]));
 }
 
 function finishGame(io, room) {
@@ -416,21 +470,35 @@ function createRoom(io, players, { tokensToWin = 4 } = {}) {
   const mode = 2;
   const colors = MODE_COLORS[mode];
   const id = 'room_' + ++roomCounter;
+  const usedNames = new Set(players.map((player) => player.name.toLocaleLowerCase()));
+  players.forEach((player) => {
+    const clientId = player.socket.data.clientId;
+    botNamesByClientId.get(clientId)?.forEach((name) => usedNames.add(name.toLowerCase()));
+  });
 
   const seats = colors.map((color, i) => {
     const p = players[i];
-    return p
-      ? {
-          color, name: p.name, baseName: p.name,
-          clientId: p.socket.data.clientId || null,
-          matchmakingId: p.matchmakingId || null,
-          socketId: p.socket.id, isBot: false, missed: 0, level: 'medium',
-        }
-      : {
-          color, name: 'Bot ' + (i + 1), baseName: 'Bot ' + (i + 1),
-          clientId: null,
-          socketId: null, isBot: true, missed: 0, level: 'expert',
-        };
+    if (p) {
+      return {
+        color, name: p.name, baseName: p.name,
+        clientId: p.socket.data.clientId || null,
+        matchmakingId: p.matchmakingId || null,
+        socketId: p.socket.id, isBot: false, missed: 0, level: 'medium',
+      };
+    }
+
+    const name = pickBotName(usedNames);
+    players.forEach((player) => {
+      const clientId = player.socket.data.clientId;
+      if (!clientId) return;
+      if (!botNamesByClientId.has(clientId)) botNamesByClientId.set(clientId, new Set());
+      botNamesByClientId.get(clientId).add(name.toLowerCase());
+    });
+    return {
+      color, name, baseName: name,
+      clientId: null,
+      socketId: null, isBot: true, missed: 0, level: 'expert',
+    };
   });
 
   const room = {
@@ -769,4 +837,4 @@ function registerHandlers(io, socket) {
   });
 }
 
-module.exports = { registerHandlers, autoAct, publicState };
+module.exports = { registerHandlers, autoAct, publicState, pickBotName, BOT_NAMES };
