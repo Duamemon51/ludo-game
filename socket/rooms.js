@@ -1,20 +1,19 @@
 const engine = require('../game/engine');
-const { chooseMove, scoreMove } = require('../game/bot');
+const { chooseTurnMove } = require('../game/bot');
 
 const MODE_COLORS = {
   2: ['red', 'yellow'],
-  4: ['red', 'green', 'yellow', 'blue'],
 };
 const TURN_MS = 20000;
-const QUEUE_WAIT_MS = 8000;
+const QUEUE_WAIT_MS = { normal: 15000, tournament: 20000 };
 const SKIP_MS = 1200;
-const MAX_MISSED = 3;
+const MAX_MISSED = 1;
 const RECONNECT_MS = 60000; // how long an empty room waits for players to come back
 
 const rooms = new Map();
 const sessions = new Map(); // clientId -> roomId (for reconnecting)
-const queues = { 2: [], 4: [] };
-const queueTimers = { 2: null, 4: null };
+const queues = { normal: [], tournament: [] };
+const queueTimers = { normal: null, tournament: null };
 let roomCounter = 0;
 
 // ---------- Friend rooms (private lobbies) ----------
@@ -71,11 +70,19 @@ function seatOf(room, color) {
   return room.seats.find((s) => s.color === color);
 }
 
-function publicState(room) {
+function publicState(room, viewerSocketId) {
   return {
     roomId: room.id,
-    seats: room.seats.map((s) => ({ color: s.color, name: s.name, isBot: s.isBot })),
+    seats: room.seats.map((s) => {
+      const takeoverHidden = s.isBot && s.level === 'takeover';
+      return {
+        color: s.color,
+        name: takeoverHidden ? s.baseName : s.name,
+        isBot: takeoverHidden ? s.socketId === viewerSocketId : s.isBot,
+      };
+    }),
     tokens: room.game.tokens,
+    captures: room.game.captures,
     turn: room.game.turn,
     phase: room.phase, // roll | move | skip | over
     dice: room.dice,
@@ -91,7 +98,11 @@ function publicState(room) {
 }
 
 function broadcast(io, room) {
-  io.to(room.id).emit('game_update', publicState(room));
+  for (const seat of room.seats) {
+    if (seat.socketId) {
+      io.to(seat.socketId).emit('game_update', publicState(room, seat.socketId));
+    }
+  }
 }
 
 // ---------- Turn flow ----------
@@ -108,7 +119,12 @@ function schedule(io, room) {
       seat.missed++;
       if (seat.missed >= MAX_MISSED) {
         seat.isBot = true;
-        io.to(room.id).emit('notice', `${seat.name} was inactive. A bot is playing for them.`);
+        seat.level = 'takeover';
+        io.to(seat.socketId).emit('notice', {
+          title: 'Bot takeover',
+          message: 'You missed a turn. A bot is temporarily playing your seat.',
+          type: 'info',
+        });
       }
     }
     autoAct(io, room);
@@ -121,7 +137,9 @@ function startTurn(io, room) {
   room.doubleRoll = false;
   room.diceOptions = [];
   room.pendingDiceOptions = [];
+  room.captureDiceOptions = [];
   room.rolledDice = [];
+  room.captureBonusSixes = 0;
   room.validMoves = [];
   room.bonusTurn = false;
   schedule(io, room);
@@ -133,17 +151,42 @@ function autoAct(io, room) {
     doRoll(io, room);
   } else if (room.phase === 'bonus-roll') {
     rollBonusDie(io, room);
+  } else if (room.phase === 'capture-roll') {
+    rollCaptureBonusDie(io, room);
   } else if (room.phase === 'move') {
     const seat = seatOf(room, room.game.turn);
-    let best = null;
-    for (const option of room.diceOptions) {
-      const tokenIdx = chooseMove(room.game, room.game.turn, option.value, seat.level);
-      if (tokenIdx == null) continue;
-      const score = scoreMove(room.game, room.game.turn, tokenIdx, option.value);
-      if (!best || score > best.score) best = { tokenIdx, id: option.id, score };
+
+    const best = chooseTurnMove(
+      room.game,
+      room.game.turn,
+      room.diceOptions,
+      seat?.level || 'expert'
+    );
+
+    if (best) {
+      doMove(io, room, best.tokenIdx, best.id);
     }
-    if (best) doMove(io, room, best.tokenIdx, best.id);
   }
+}
+
+function forfeitTurnAfterThreeSixes(io, room, color) {
+  const seat = seatOf(room, color);
+  room.diceOptions = [];
+  room.pendingDiceOptions = [];
+  room.captureDiceOptions = [];
+  room.validMoves = [];
+  room.phase = 'skip';
+  room.deadline = null;
+  io.to(room.id).emit('notice', {
+    title: 'Turn forfeited',
+    message: `Three consecutive sixes. ${(seat.baseName || seat.name)}'s turn has been forfeited.`,
+    type: 'warning',
+  });
+  broadcast(io, room);
+  room.timer = setTimeout(() => {
+    engine.nextTurn(room.game, false);
+    startTurn(io, room);
+  }, SKIP_MS);
 }
 
 function doRoll(io, room) {
@@ -202,18 +245,7 @@ function rollBonusDie(io, room) {
     }
 
     if (second === 6 && room.rolledDice.length === 3) {
-      const seat = seatOf(room, color);
-      room.diceOptions = [];
-      room.pendingDiceOptions = [];
-      room.validMoves = [];
-      room.phase = 'skip';
-      room.deadline = null;
-      io.to(room.id).emit('notice', `Three sixes! ${seat.name}'s turn is forfeited.`);
-      broadcast(io, room);
-      room.timer = setTimeout(() => {
-        engine.nextTurn(room.game, false);
-        startTurn(io, room);
-      }, SKIP_MS);
+      forfeitTurnAfterThreeSixes(io, room, color);
       return;
     }
 
@@ -280,6 +312,19 @@ function doMove(io, room, tokenIdx, diceId) {
     return;
   }
 
+  if (result.captured.length > 0) {
+    room.captureDiceOptions = room.diceOptions;
+    room.captureBonusSixes = 0;
+    room.diceOptions = [];
+    room.validMoves = [];
+    room.dice = null;
+    room.bonusTurn = false;
+    room.phase = 'capture-roll';
+    schedule(io, room);
+    broadcast(io, room);
+    return;
+  }
+
   if (room.validMoves.length > 0) {
     room.phase = 'move';
     schedule(io, room);
@@ -300,6 +345,55 @@ function finishGame(io, room) {
   destroyRoom(io, room);
 }
 
+function rollCaptureBonusDie(io, room) {
+  if (room.phase !== 'capture-roll') return;
+  clearTimeout(room.timer);
+  const value = engine.rollDice();
+  const color = room.game.turn;
+  room.rollId = (room.rollId || 0) + 1;
+  room.dieRollId = (room.dieRollId || 0) + 1;
+  room.dice = value;
+  room.diceOptions = [];
+  room.validMoves = [];
+  room.pendingDiceOptions = [
+    ...(room.captureDiceOptions || []),
+    {
+      id: `capture-${room.rollId}`,
+      value,
+      moves: engine.getValidMoves(room.game, color, value),
+    },
+  ].map((option) => ({
+    ...option,
+    moves: engine.getValidMoves(room.game, color, option.value),
+  }));
+  room.captureDiceOptions = [];
+  room.phase = 'capture-reveal';
+  room.deadline = null;
+  broadcast(io, room);
+  room.timer = setTimeout(() => {
+    if (value === 6) {
+      room.captureBonusSixes = (room.captureBonusSixes || 0) + 1;
+      if (room.captureBonusSixes === 3) {
+        forfeitTurnAfterThreeSixes(io, room, color);
+        return;
+      }
+
+      room.captureDiceOptions = room.pendingDiceOptions;
+      room.pendingDiceOptions = [];
+      room.phase = 'capture-roll';
+      schedule(io, room);
+      broadcast(io, room);
+      return;
+    }
+
+    room.captureBonusSixes = 0;
+    room.diceOptions = room.pendingDiceOptions;
+    room.pendingDiceOptions = [];
+    room.validMoves = [...new Set(room.diceOptions.flatMap((option) => option.moves))];
+    showRollMoves(io, room);
+  }, 650);
+}
+
 function destroyRoom(io, room) {
   clearTimeout(room.timer);
   clearTimeout(room.emptyTimer);
@@ -318,7 +412,8 @@ function destroyRoom(io, room) {
 
 // ---------- Rooms and matchmaking ----------
 
-function createRoom(io, players, mode) {
+function createRoom(io, players, { tokensToWin = 4 } = {}) {
+  const mode = 2;
   const colors = MODE_COLORS[mode];
   const id = 'room_' + ++roomCounter;
 
@@ -328,6 +423,7 @@ function createRoom(io, players, mode) {
       ? {
           color, name: p.name, baseName: p.name,
           clientId: p.socket.data.clientId || null,
+          matchmakingId: p.matchmakingId || null,
           socketId: p.socket.id, isBot: false, missed: 0, level: 'medium',
         }
       : {
@@ -339,10 +435,10 @@ function createRoom(io, players, mode) {
 
   const room = {
     id, mode, seats,
-    game: engine.createGame(colors),
-    phase: 'roll', dice: null, diceOptions: [], pendingDiceOptions: [], dieRollId: 0,
+    game: engine.createGame(colors, { tokensToWin }),
+    phase: 'roll', dice: null, diceOptions: [], pendingDiceOptions: [], captureDiceOptions: [], dieRollId: 0,
     rolledDice: [], rollId: 0, validMoves: [], lastMove: null,
-    bonusTurn: false, doubleRoll: false,
+    bonusTurn: false, doubleRoll: false, captureBonusSixes: 0,
     timer: null, deadline: null, emptyTimer: null,
   };
   rooms.set(id, room);
@@ -352,35 +448,77 @@ function createRoom(io, players, mode) {
     p.socket.data.roomId = id;
     p.socket.data.color = colors[i];
     if (p.socket.data.clientId) sessions.set(p.socket.data.clientId, id);
-    p.socket.emit('match_found', { roomId: id, yourColor: colors[i] });
+    p.socket.emit('match_found', {
+      roomId: id,
+      yourColor: colors[i],
+      requestId: p.matchmakingId || undefined,
+    });
   });
 
   startTurn(io, room);
 }
 
-function checkQueue(io, mode) {
-  const q = queues[mode];
-  while (q.length >= mode) createRoom(io, q.splice(0, mode), mode);
+function checkQueue(io, queueType) {
+  const q = queues[queueType];
+  const tokensToWin = queueType === 'tournament' ? 1 : 4;
+  while (q.length >= 2) createRoom(io, q.splice(0, 2), { tokensToWin });
 
   if (q.length === 0) {
-    clearTimeout(queueTimers[mode]);
-    queueTimers[mode] = null;
+    clearTimeout(queueTimers[queueType]);
+    queueTimers[queueType] = null;
     return;
   }
-  if (!queueTimers[mode]) {
-    queueTimers[mode] = setTimeout(() => {
-      queueTimers[mode] = null;
-      const players = q.splice(0, mode);
-      if (players.length) createRoom(io, players, mode); // bots fill the rest
-      checkQueue(io, mode);
-    }, QUEUE_WAIT_MS);
+  if (!queueTimers[queueType]) {
+    queueTimers[queueType] = setTimeout(() => {
+      queueTimers[queueType] = null;
+      const players = q.splice(0, 2);
+      if (players.length) createRoom(io, players, { tokensToWin }); // bots fill the remaining seat
+      checkQueue(io, queueType);
+    }, QUEUE_WAIT_MS[queueType]);
   }
 }
 
-function removeFromQueues(socket) {
-  for (const mode of [2, 4]) {
-    queues[mode] = queues[mode].filter((p) => p.socket.id !== socket.id);
+function removeFromQueues(io, socket, requestId) {
+  for (const queueType of Object.keys(queues)) {
+    const queue = queues[queueType];
+    for (let i = queue.length - 1; i >= 0; i--) {
+      const player = queue[i];
+      if (player.socket.id === socket.id && (!requestId || player.matchmakingId === requestId)) {
+        queue.splice(i, 1);
+      }
+    }
+    checkQueue(io, queueType);
   }
+}
+
+function replaceWithBot(io, socket) {
+  const room = rooms.get(socket.data.roomId);
+  const seat = room && room.seats.find((s) => s.socketId === socket.id);
+  if (!room || !seat) return false;
+
+  seat.socketId = null;
+  seat.isBot = true;
+  seat.name = seat.baseName + ' (bot)';
+  if (seat.clientId && sessions.get(seat.clientId) === room.id) sessions.delete(seat.clientId);
+  seat.clientId = null;
+  seat.matchmakingId = null;
+
+  socket.leave(room.id);
+  socket.data.roomId = null;
+  socket.data.color = null;
+  if (!room.seats.some((s) => s.socketId)) {
+    clearTimeout(room.emptyTimer);
+    room.emptyTimer = setTimeout(() => destroyRoom(io, room), RECONNECT_MS);
+    return true;
+  }
+
+  clearTimeout(room.emptyTimer);
+  room.emptyTimer = null;
+  if (room.game.turn === seat.color && ['roll', 'bonus-roll', 'capture-roll', 'move'].includes(room.phase)) {
+    schedule(io, room);
+  }
+  broadcast(io, room);
+  return true;
 }
 
 // ---------- Reconnect ----------
@@ -409,8 +547,10 @@ function resumeGame(io, socket) {
   clearTimeout(room.emptyTimer);
   room.emptyTimer = null;
 
+  const wasTakenOver = seat.isBot && seat.level === 'takeover';
   seat.socketId = socket.id;
   seat.isBot = false;
+  seat.level = 'medium';
   seat.missed = 0;
   seat.name = seat.baseName;
 
@@ -419,10 +559,22 @@ function resumeGame(io, socket) {
   socket.data.color = seat.color;
 
   socket.emit('match_found', { roomId: room.id, yourColor: seat.color });
-  io.to(room.id).emit('notice', `${seat.baseName} is back.`);
+  if (wasTakenOver) {
+    socket.emit('notice', {
+      title: 'Control restored',
+      message: 'You are back in control. A bot handled your seat while you were disconnected.',
+      type: 'success',
+    });
+  } else {
+    io.to(room.id).emit('notice', {
+      title: 'Player reconnected',
+      message: `${seat.baseName} has rejoined.`,
+      type: 'success',
+    });
+  }
 
   // If it is their turn, give them a human timer again instead of the bot's
-  if (room.game.turn === seat.color && ['roll', 'bonus-roll', 'move'].includes(room.phase)) {
+  if (room.game.turn === seat.color && ['roll', 'bonus-roll', 'capture-roll', 'move'].includes(room.phase)) {
     schedule(io, room);
   }
   broadcast(io, room);
@@ -436,29 +588,36 @@ function registerHandlers(io, socket) {
 
   socket.on('resume_game', () => resumeGame(io, socket));
 
-  socket.on('find_match', ({ mode, name } = {}) => {
+  socket.on('find_match', ({ name, requestId, queueType } = {}) => {
     if (socket.data.roomId) return;
     leaveLobby(io, socket);
-    removeFromQueues(socket);
-    const m = mode === 4 ? 4 : 2;
-    queues[m].push({ socket, name: cleanName(name) });
-    socket.emit('queued', { mode: m, waitMs: QUEUE_WAIT_MS });
-    checkQueue(io, m);
+    removeFromQueues(io, socket);
+    const matchmakingId = String(requestId || '').slice(0, 80);
+    const type = queueType === 'tournament' ? 'tournament' : 'normal';
+    queues[type].push({ socket, name: cleanName(name), matchmakingId });
+    socket.emit('queued', { mode: 2, waitMs: QUEUE_WAIT_MS[type], requestId: matchmakingId });
+    checkQueue(io, type);
   });
 
-  socket.on('cancel_match', () => {
-    removeFromQueues(socket);
+  socket.on('cancel_match', ({ requestId } = {}) => {
+    const matchmakingId = String(requestId || '').slice(0, 80);
+    removeFromQueues(io, socket, matchmakingId);
+    const room = rooms.get(socket.data.roomId);
+    const seat = room?.seats.find((s) =>
+      s.socketId === socket.id && s.matchmakingId === matchmakingId
+    );
+    if (seat) replaceWithBot(io, socket);
   });
 
   // ----- Friend rooms -----
 
-  socket.on('create_room', ({ mode, name } = {}) => {
+  socket.on('create_room', ({ name } = {}) => {
     if (socket.data.roomId) return;
-    removeFromQueues(socket);
+    removeFromQueues(io, socket);
     leaveLobby(io, socket);
     const lobby = {
       code: makeCode(),
-      mode: mode === 4 ? 4 : 2,
+      mode: 2,
       hostId: socket.id,
       players: [],
     };
@@ -472,7 +631,7 @@ function registerHandlers(io, socket) {
     if (!lobby) return socket.emit('lobby_error', 'Room not found. Check the code.');
     if (lobby.players.some((p) => p.socket.id === socket.id)) return;
     if (lobby.players.length >= lobby.mode) return socket.emit('lobby_error', 'Room is full.');
-    removeFromQueues(socket);
+    removeFromQueues(io, socket);
     leaveLobby(io, socket);
     joinLobby(io, lobby, socket, name);
   });
@@ -483,44 +642,7 @@ function registerHandlers(io, socket) {
     const acknowledge = () => {
       if (typeof ack === 'function') ack({ ok: true });
     };
-    const room = rooms.get(socket.data.roomId);
-    if (!room) {
-      acknowledge();
-      return;
-    }
-    const seat = room.seats.find((s) => s.socketId === socket.id);
-    if (!seat) {
-      acknowledge();
-      return;
-    }
-
-    seat.socketId = null;
-    seat.isBot = true;
-    seat.name = seat.baseName + ' (bot)';
-    if (seat.clientId && sessions.get(seat.clientId) === room.id) {
-      sessions.delete(seat.clientId);
-    }
-    seat.clientId = null;
-
-    socket.leave(room.id);
-    socket.data.roomId = null;
-    socket.data.color = null;
-
-    io.to(room.id).emit('notice', `${seat.baseName} left the game. A bot is playing.`);
-
-    if (!room.seats.some((s) => s.socketId)) {
-      clearTimeout(room.emptyTimer);
-      room.emptyTimer = setTimeout(() => destroyRoom(io, room), RECONNECT_MS);
-      acknowledge();
-      return;
-    }
-
-    clearTimeout(room.emptyTimer);
-    room.emptyTimer = null;
-    if (room.game.turn === seat.color && ['roll', 'bonus-roll', 'move'].includes(room.phase)) {
-      schedule(io, room);
-    }
-    broadcast(io, room);
+    replaceWithBot(io, socket);
     acknowledge();
   });
 
@@ -532,7 +654,7 @@ function registerHandlers(io, socket) {
       p.socket.data.lobbyCode = null;
       p.socket.leave('lobby_' + lobby.code);
     });
-    createRoom(io, lobby.players, lobby.mode); // empty seats become bots
+    createRoom(io, lobby.players); // empty seats become bots
   });
 
   // ----- Chat -----
@@ -581,6 +703,7 @@ function registerHandlers(io, socket) {
     const seat = seatOf(room, socket.data.color);
     if (!seat || seat.socketId !== socket.id || room.game.turn !== seat.color) return;
     seat.isBot = false;
+    seat.level = 'medium';
     seat.missed = 0;
     doRoll(io, room);
   });
@@ -591,8 +714,20 @@ function registerHandlers(io, socket) {
     const seat = seatOf(room, socket.data.color);
     if (!seat || seat.socketId !== socket.id || room.game.turn !== seat.color) return;
     seat.isBot = false;
+    seat.level = 'medium';
     seat.missed = 0;
     rollBonusDie(io, room);
+  });
+
+  socket.on('roll_capture_bonus', () => {
+    const room = rooms.get(socket.data.roomId);
+    if (!room || room.phase !== 'capture-roll') return;
+    const seat = seatOf(room, socket.data.color);
+    if (!seat || seat.socketId !== socket.id || room.game.turn !== seat.color) return;
+    seat.isBot = false;
+    seat.level = 'medium';
+    seat.missed = 0;
+    rollCaptureBonusDie(io, room);
   });
 
   socket.on('move_token', ({ tokenIdx, diceId } = {}) => {
@@ -603,13 +738,14 @@ function registerHandlers(io, socket) {
     const option = room.diceOptions.find((candidate) => candidate.id === diceId);
     if (!Number.isInteger(tokenIdx) || !option || !option.moves.includes(tokenIdx)) return;
     seat.isBot = false;
+    seat.level = 'medium';
     seat.missed = 0;
     doMove(io, room, tokenIdx, diceId);
   });
 
   socket.on('disconnect', () => {
     leaveLobby(io, socket);
-    removeFromQueues(socket);
+    removeFromQueues(io, socket);
     const room = rooms.get(socket.data.roomId);
     if (!room) return;
     const seat = room.seats.find((s) => s.socketId === socket.id);
@@ -617,6 +753,7 @@ function registerHandlers(io, socket) {
 
     seat.socketId = null;
     seat.isBot = true; // a bot plays for them until they return
+    seat.level = 'takeover';
     seat.name = seat.baseName + ' (bot)';
 
     if (!room.seats.some((s) => s.socketId)) {
@@ -625,13 +762,11 @@ function registerHandlers(io, socket) {
       room.emptyTimer = setTimeout(() => destroyRoom(io, room), RECONNECT_MS);
       return;
     }
-    io.to(room.id).emit('notice', `${seat.baseName} disconnected. A bot is playing until they return.`);
-
-    if (room.game.turn === seat.color && ['roll', 'bonus-roll', 'move'].includes(room.phase)) {
+    if (room.game.turn === seat.color && ['roll', 'bonus-roll', 'capture-roll', 'move'].includes(room.phase)) {
       schedule(io, room);
     }
     broadcast(io, room);
   });
 }
 
-module.exports = { registerHandlers };
+module.exports = { registerHandlers, autoAct, publicState };
