@@ -16,7 +16,7 @@ const TRIANGLES = {
   blue: '6,9 9,9 7.5,7.5',
 };
 const RADIUS = 0.36;
-const HOP_MS = 50;
+const HOP_MS = 110;
 const HOME_FX_MS = 1500;
 const CONFETTI = 16;
 const GOLD = '#fbbf24';

@@ -793,7 +793,7 @@ button { touch-action: manipulation; font-family: inherit; }
   .code-box { font-size: 32px; letter-spacing: 6px; }
 }
 @media (max-width: 600px) {
-  .token { filter: none; transition: transform 0.05s linear; will-change: transform; }
+  .token { filter: none; transition: transform 0.1s cubic-bezier(0.2, 0.75, 0.3, 1); will-change: transform; }
   .app.in-game .player-profile .pname:not(.player-name-you) {
     max-width: min(42vw, 150px);
   }
