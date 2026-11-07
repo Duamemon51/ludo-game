@@ -301,7 +301,7 @@ export default function App() {
     if (option.moves.length !== 1) return;
     const t = setTimeout(
       () => socket.emit('move_token', { tokenIdx: option.moves[0], diceId: option.id }),
-      900
+      250
     );
     return () => clearTimeout(t);
   }, [game, status, myColor, connected]);

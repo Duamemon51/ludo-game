@@ -17,7 +17,7 @@ const CUBE = [
   [4, 'rotateY(-90deg)'], [2, 'rotateX(90deg)'], [5, 'rotateX(-90deg)'],
 ];
 
-const ROLL_MS = 300;
+const ROLL_MS = 240;
 
 export default function GameDice({ value, color, canRoll, onRoll, rollId }) {
   const [settledRoll, setSettledRoll] = useState(null);
@@ -99,9 +99,9 @@ export default function GameDice({ value, color, canRoll, onRoll, rollId }) {
         }
         @keyframes gd-tumble {
           0% { transform: rotateX(0deg) rotateY(0deg); }
-          30% { transform: rotateX(480deg) rotateY(600deg); }
-          70% { transform: rotateX(960deg) rotateY(1080deg); }
-          100% { transform: rotateX(1080deg) rotateY(1440deg); }
+          30% { transform: rotateX(240deg) rotateY(300deg); }
+          70% { transform: rotateX(480deg) rotateY(540deg); }
+          100% { transform: rotateX(720deg) rotateY(720deg); }
         }
         @keyframes gd-shadow {
           0%, 55%, 100% { transform: scale(1); opacity: 1; }

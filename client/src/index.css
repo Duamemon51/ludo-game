@@ -180,7 +180,7 @@ button { touch-action: manipulation; font-family: inherit; }
     0 12px 0 #4b5563,
     0 24px 34px rgba(0, 0, 0, 0.55);
 }
-.token { transition: transform 0.14s linear; filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.5)); }
+.token { transition: transform 0.085s linear; filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.5)); }
 .token.movable { cursor: pointer; }
 .token-dice-menu { cursor: pointer; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.55)); }
 .token-dice-menu rect { fill: #fff; stroke: #111827; stroke-width: 0.08; }
@@ -793,6 +793,7 @@ button { touch-action: manipulation; font-family: inherit; }
   .code-box { font-size: 32px; letter-spacing: 6px; }
 }
 @media (max-width: 600px) {
+  .token { filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.4)); }
   .app.in-game .player-profile .pname:not(.player-name-you) {
     max-width: min(42vw, 150px);
   }
