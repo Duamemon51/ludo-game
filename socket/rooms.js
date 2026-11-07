@@ -399,6 +399,23 @@ function finishGame(io, room) {
   destroyRoom(io, room);
 }
 
+function forfeitGame(io, room, seat, socket) {
+  const opponent = room.seats.find((candidate) => candidate.color !== seat.color);
+  if (!opponent) return false;
+
+  room.game.winner = opponent.color;
+  seat.socketId = null;
+  seat.isBot = false;
+  if (seat.clientId && sessions.get(seat.clientId) === room.id) sessions.delete(seat.clientId);
+  seat.clientId = null;
+  seat.matchmakingId = null;
+  socket.leave(room.id);
+  socket.data.roomId = null;
+  socket.data.color = null;
+  finishGame(io, room);
+  return true;
+}
+
 function rollCaptureBonusDie(io, room) {
   if (room.phase !== 'capture-roll') return;
   clearTimeout(room.timer);
@@ -710,7 +727,9 @@ function registerHandlers(io, socket) {
     const acknowledge = () => {
       if (typeof ack === 'function') ack({ ok: true });
     };
-    replaceWithBot(io, socket);
+    const room = rooms.get(socket.data.roomId);
+    const seat = room?.seats.find((candidate) => candidate.socketId === socket.id);
+    if (room && seat) forfeitGame(io, room, seat, socket);
     acknowledge();
   });
 
@@ -837,4 +856,6 @@ function registerHandlers(io, socket) {
   });
 }
 
-module.exports = { registerHandlers, autoAct, publicState, pickBotName, BOT_NAMES };
+module.exports = {
+  registerHandlers, autoAct, publicState, pickBotName, forfeitGame, BOT_NAMES,
+};
