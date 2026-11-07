@@ -120,7 +120,7 @@ export default function LoginScreen({ onSignIn, loading = false, error = '' }) {
         .ls-head { display: flex; flex-direction: column; align-items: center; }
         .ls-dice { position: relative; width: 48px; height: 48px; margin: 2px 0 12px; perspective: 360px; cursor: pointer; outline: none; }
         .ls-dice:focus-visible .ls-cube { outline: 3px solid var(--focus); outline-offset: 6px; border-radius: 10px; }
-        .ls-cube { position: relative; width: 48px; height: 48px; transform-style: preserve-3d; transition: transform 1s cubic-bezier(.2,.9,.25,1.05); }
+        .ls-cube { position: relative; width: 48px; height: 48px; transform-style: preserve-3d; transition: transform .45s cubic-bezier(.2,.9,.25,1.05); }
         .ls-face { position: absolute; inset: 0; display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); padding: 7px; border-radius: 9px; backface-visibility: hidden;
           background: radial-gradient(circle at 30% 25%, #fff, #f6f1e4 60%, #ddd5c0); box-shadow: inset 0 0 0 1px rgba(0,0,0,.12), inset -3px -3px 6px rgba(0,0,0,.12); }
         .ls-face i { width: 9px; height: 9px; margin: auto; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #5a4a3a, #140b04); box-shadow: 0 1px 0 #fff; }

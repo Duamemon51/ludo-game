@@ -48,7 +48,7 @@ export default function MatchmakingScreen({ secondsLeft, onCancel }) {
           border-top-color: #e0a000;
           border-right-color: #3fa34d;
           border-radius: 50%;
-          animation: matchmaking-spin .8s linear infinite;
+          animation: matchmaking-spin .5s linear infinite;
         }
         .matchmaking-modal h2 { margin: 3px 0 0; font-size: 21px; }
         .matchmaking-modal p { margin: 0 0 8px; color: #715637; font-size: 13px; }
@@ -69,7 +69,7 @@ export default function MatchmakingScreen({ secondsLeft, onCancel }) {
         @keyframes matchmaking-pop-in { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
         @media (prefers-reduced-motion: reduce) {
           .matchmaking-overlay, .matchmaking-modal { animation: none; }
-          .matchmaking-spinner { animation-duration: 2s; }
+          .matchmaking-spinner { animation-duration: .5s; }
         }
       `}</style>
     </div>

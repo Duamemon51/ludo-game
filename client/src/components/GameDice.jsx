@@ -17,7 +17,7 @@ const CUBE = [
   [4, 'rotateY(-90deg)'], [2, 'rotateX(90deg)'], [5, 'rotateX(-90deg)'],
 ];
 
-const ROLL_MS = 500;
+const ROLL_MS = 300;
 
 export default function GameDice({ value, color, canRoll, onRoll, rollId }) {
   const [settledRoll, setSettledRoll] = useState(null);
