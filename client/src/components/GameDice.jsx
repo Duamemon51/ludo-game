@@ -17,7 +17,7 @@ const CUBE = [
   [4, 'rotateY(-90deg)'], [2, 'rotateX(90deg)'], [5, 'rotateX(-90deg)'],
 ];
 
-const ROLL_MS = 240;
+const ROLL_MS = 420;
 
 export default function GameDice({ value, color, canRoll, onRoll, rollId }) {
   const [settledRoll, setSettledRoll] = useState(null);
@@ -58,15 +58,16 @@ export default function GameDice({ value, color, canRoll, onRoll, rollId }) {
         .gd.can-roll .gd-shadow { background: color-mix(in srgb, var(--c) 40%, #000); }
         .gd.rolling .gd-shadow { animation: gd-shadow var(--roll) ease-out; }
 
-        .gd-hop { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform .15s; }
+        .gd-hop { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform .15s; will-change: transform; }
         .gd.can-roll:hover .gd-hop { transform: translateY(-3px); }
         .gd.can-roll:active .gd-hop { transform: translateY(1px) scale(.96); }
         .gd.rolling .gd-hop { animation: gd-hop var(--roll) ease-out; }
 
         .gd-tumble {
           position: absolute; inset: 0; transform-style: preserve-3d;
+          will-change: transform;
         }
-        .gd-tumble.rolling { animation: gd-tumble var(--roll) cubic-bezier(.15, .55, .3, 1) both; }
+        .gd-tumble.rolling { animation: gd-tumble var(--roll) cubic-bezier(.12, .68, .2, 1) both; }
         .gd-cube {
           position: absolute; inset: 0; transform-style: preserve-3d;
         }
@@ -98,10 +99,8 @@ export default function GameDice({ value, color, canRoll, onRoll, rollId }) {
           100% { transform: translate(0, 0) rotateZ(-360deg) scale(1); }
         }
         @keyframes gd-tumble {
-          0% { transform: rotateX(0deg) rotateY(0deg); }
-          30% { transform: rotateX(240deg) rotateY(300deg); }
-          70% { transform: rotateX(480deg) rotateY(540deg); }
-          100% { transform: rotateX(720deg) rotateY(720deg); }
+          from { transform: rotateX(0deg) rotateY(0deg); }
+          to { transform: rotateX(1440deg) rotateY(1800deg); }
         }
         @keyframes gd-shadow {
           0%, 55%, 100% { transform: scale(1); opacity: 1; }
@@ -115,7 +114,7 @@ export default function GameDice({ value, color, canRoll, onRoll, rollId }) {
           .gd-shadow { animation: none !important; }
           @keyframes gd-tumble-reduced {
             from { transform: rotateX(0deg) rotateY(0deg); }
-            to { transform: rotateX(360deg) rotateY(360deg); }
+            to { transform: rotateX(720deg) rotateY(720deg); }
           }
         }
       `}</style>
