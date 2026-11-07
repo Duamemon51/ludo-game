@@ -1,7 +1,8 @@
 import { COLORS } from '../ludoLayout';
 
-export default function PlayerProfile({ seat, isMe, pct, onChat }) {
-  const initial = seat.isBot ? '🤖' : (seat.name || '?').trim().charAt(0).toUpperCase();
+export default function PlayerProfile({ seat, isMe, pct, onChat, avatar }) {
+  const initial = (seat.name || '?').trim().charAt(0).toUpperCase();
+  const showAvatar = Boolean(avatar && (isMe || seat.isTakeover));
 
   return (
     <div className="player-profile">
@@ -13,9 +14,24 @@ export default function PlayerProfile({ seat, isMe, pct, onChat }) {
         onClick={onChat}
         aria-label={isMe ? 'Open chat' : seat.name}
       >
-        <span className="avatar" style={{ color: seat.color === 'yellow' ? '#222' : '#fff' }}>
-          {initial}
-        </span>
+        {showAvatar ? (
+          <img className="avatar avatar-photo" src={avatar} alt="" />
+        ) : (
+          <span className="avatar" style={{ color: seat.color === 'yellow' ? '#222' : '#fff' }}>
+            {initial}
+          </span>
+        )}
+        <svg className="avatar-timer" viewBox="0 0 56 56" aria-hidden="true">
+          <circle className="avatar-timer-track" cx="28" cy="28" r="25" pathLength="100" />
+          <circle
+            className="avatar-timer-progress"
+            cx="28"
+            cy="28"
+            r="25"
+            pathLength="100"
+            style={{ strokeDashoffset: `${100 - pct}` }}
+          />
+        </svg>
         {isMe && <span className="chat-badge">💬</span>}
       </button>
 

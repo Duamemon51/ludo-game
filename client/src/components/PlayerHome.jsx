@@ -127,7 +127,9 @@ function resizeImage(file, size) {
   });
 }
 
-export default function PlayerHome({ name, onNameChange, onFindMatch, token, onSignOut, connected = true }) {
+export default function PlayerHome({
+  name, onNameChange, onAvatarChange, onFindMatch, token, onSignOut, connected = true,
+}) {
   const [page, setPage] = useState('home');
   const [bet, setBet] = useState(300);
   const [tournamentBet, setTournamentBet] = useState(300);
@@ -154,6 +156,19 @@ export default function PlayerHome({ name, onNameChange, onFindMatch, token, onS
   const historyPageSize = 5;
   const journeyPageSize = 5;
   const avatarKey = `ludo-avatar:${profile?.id ?? profile?.name ?? name ?? 'player'}`;
+  const loadPlayerAvatar = useCallback((playerProfile) => {
+    const key = `ludo-avatar:${playerProfile?.id ?? playerProfile?.name ?? name ?? 'player'}`;
+    let savedAvatar;
+    try {
+      savedAvatar = localStorage.getItem(key) || '';
+    } catch {
+      onAvatarChange?.('');
+      setAvatar('');
+      return;
+    }
+    setAvatar(savedAvatar);
+    onAvatarChange?.(savedAvatar);
+  }, [name, onAvatarChange]);
   const balance = wallet.balance;
   const availableBalance = wallet.availableBalance;
   const active = profile?.status === 'Active';
@@ -225,6 +240,7 @@ export default function PlayerHome({ name, onNameChange, onFindMatch, token, onS
         playerRequest('/matches', { token }),
         playerRequest('/tournaments', { token }),
       ]);
+      loadPlayerAvatar(playerProfile);
       setProfile(playerProfile);
       setWallet(walletData);
       setMatches(matchRows);
@@ -236,7 +252,7 @@ export default function PlayerHome({ name, onNameChange, onFindMatch, token, onS
     } finally {
       setLoading(false);
     }
-  }, [token, onNameChange]);
+  }, [loadPlayerAvatar, token, onNameChange]);
 
   useEffect(() => {
     const expireSession = () => onSignOut();
@@ -258,6 +274,7 @@ export default function PlayerHome({ name, onNameChange, onFindMatch, token, onS
       playerRequest('/tournaments', { token }),
     ]).then(([playerProfile, walletData, matchRows, tournamentSettings]) => {
       if (!activeRequest) return;
+      loadPlayerAvatar(playerProfile);
       setProfile(playerProfile);
       setWallet(walletData);
       setMatches(matchRows);
@@ -270,7 +287,7 @@ export default function PlayerHome({ name, onNameChange, onFindMatch, token, onS
       if (activeRequest) setLoading(false);
     });
     return () => { activeRequest = false; };
-  }, [token, onNameChange]);
+  }, [loadPlayerAvatar, token, onNameChange]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -298,14 +315,6 @@ export default function PlayerHome({ name, onNameChange, onFindMatch, token, onS
     };
   }, [historyFilterOpen]);
 
-  useEffect(() => {
-    try {
-      setAvatar(localStorage.getItem(avatarKey) || '');
-    } catch {
-      setAvatar('');
-    }
-  }, [avatarKey]);
-
   const onPickAvatar = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -318,6 +327,7 @@ export default function PlayerHome({ name, onNameChange, onFindMatch, token, onS
       const dataUrl = await resizeImage(file, 160);
       localStorage.setItem(avatarKey, dataUrl);
       setAvatar(dataUrl);
+      onAvatarChange?.(dataUrl);
       setAvatarError('');
     } catch {
       setAvatarError('Could not save this photo. Try a different image.');
@@ -327,6 +337,7 @@ export default function PlayerHome({ name, onNameChange, onFindMatch, token, onS
   const removeAvatar = () => {
     try { localStorage.removeItem(avatarKey); } catch { /* storage unavailable */ }
     setAvatar('');
+    onAvatarChange?.('');
     setAvatarError('');
   };
 

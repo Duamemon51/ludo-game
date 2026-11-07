@@ -9,7 +9,7 @@ import MatchmakingScreen from './components/MatchmakingScreen';
 import LoginScreen from './components/LoginScreen';
 import MasterDashboard from './components/MasterDashboard';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
-import GameExitButton from './components/GameExitButton';
+import GameTopBar from './components/GameTopBar';
 import { signIn } from './authApi';
 
 const AUTO_MOVE_SINGLE = true; // auto-play when only one token can move
@@ -18,6 +18,49 @@ const BUBBLE_MS = 4500;
 const RESULT_REVEAL_MS = 2600;
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const urlCode = (new URLSearchParams(window.location.search).get('room') || '').toUpperCase();
+let uiAudioContext;
+
+function unlockUiAudio() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return Promise.resolve();
+  uiAudioContext ||= new AudioContextClass();
+  if (uiAudioContext.state === 'suspended') {
+    return uiAudioContext.resume().catch((error) => {
+      console.warn('Could not enable UI audio:', error);
+    });
+  }
+  return Promise.resolve();
+}
+
+function playMatchFoundChime() {
+  unlockUiAudio()
+    .then(() => {
+      const context = uiAudioContext;
+      if (!context || context.state !== 'running') {
+        console.warn('Match-found chime unavailable: audio is not enabled.');
+        return;
+      }
+
+      const start = context.currentTime;
+      [659.25, 880].forEach((frequency, index) => {
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        const noteStart = start + index * 0.13;
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(frequency, noteStart);
+        gain.gain.setValueAtTime(0.0001, noteStart);
+        gain.gain.linearRampToValueAtTime(0.2, noteStart + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, noteStart + 0.42);
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+        oscillator.start(noteStart);
+        oscillator.stop(noteStart + 0.43);
+      });
+    })
+    .catch((error) => {
+      console.warn('Could not enable match-found chime:', error);
+    });
+}
 
 // Where each color's panel sits (matches the board corners)
 const SLOTS = {
@@ -58,6 +101,9 @@ export default function App() {
   ));
   const [myColor, setMyColor] = useState(null);
   const [game, setGame] = useState(null);
+  const [playerAvatar, setPlayerAvatar] = useState('');
+  const [matchWinAmount, setMatchWinAmount] = useState(null);
+  const [soundMuted, setSoundMuted] = useState(() => localStorage.getItem('ludo-sound-muted') === 'true');
   const [lobby, setLobby] = useState(null);
   const [bubbles, setBubbles] = useState({}); // key: color (in game) or socket id (in lobby)
   const [chatOpen, setChatOpen] = useState(false);
@@ -83,6 +129,36 @@ export default function App() {
     game?.dice != null ? [{ id: 0, value: game.dice, moves: game.validMoves || [] }] : []
   );
   const usableDiceOptions = diceOptions.filter((option) => option.moves.length > 0);
+
+  useEffect(() => {
+    const clickSound = new Audio('/sounds/piece-move.mp3');
+    clickSound.preload = 'auto';
+    clickSound.volume = 1;
+    clickSound.playbackRate = 1.8;
+
+    const playButtonSound = (event) => {
+      if (soundMuted) return;
+      unlockUiAudio();
+      const control = event.target.closest('button, [role="button"]');
+      if (!control || control.disabled || control.getAttribute('aria-disabled') === 'true') return;
+      if (control.matches('.gd')) return;
+      clickSound.currentTime = 0;
+      clickSound.play().catch((error) => {
+        console.warn('Could not play button click sound:', error);
+      });
+    };
+    const playKeyboardButtonSound = (event) => {
+      if (event.key === 'Enter' || event.key === ' ') playButtonSound(event);
+    };
+
+    document.addEventListener('pointerdown', playButtonSound);
+    document.addEventListener('keydown', playKeyboardButtonSound);
+    return () => {
+      document.removeEventListener('pointerdown', playButtonSound);
+      document.removeEventListener('keydown', playKeyboardButtonSound);
+      clickSound.pause();
+    };
+  }, [soundMuted]);
 
   const showNotice = (msg) => {
     const details = typeof msg === 'string'
@@ -179,6 +255,7 @@ export default function App() {
       matchmakingRequestRef.current = null;
       cancelledMatchmakingRef.current = false;
       clearTimeout(resultTimerRef.current);
+      playMatchFoundChime();
       setMyColor(yourColor);
       setHomeView('menu');
       setLobby(null);
@@ -291,7 +368,7 @@ export default function App() {
   // Auto-play when there is exactly one possible move
   useEffect(() => {
     if (!AUTO_MOVE_SINGLE || !connected || status !== 'playing' || !game) return;
-    if (game.turn !== myColor || game.phase !== 'move' || game.doubleRoll) return;
+    if (game.turn !== myColor || game.phase !== 'move') return;
     if (game.seats?.some((seat) => seat.color === myColor && seat.isBot)) return;
     const options = (game.diceOptions || (
       game.dice != null ? [{ id: 0, value: game.dice, moves: game.validMoves || [] }] : []
@@ -299,6 +376,7 @@ export default function App() {
     if (options.length !== 1) return;
     const [option] = options;
     if (option.moves.length !== 1) return;
+    if (game.tokens[myColor]?.[option.moves[0]] === -1) return;
     const t = setTimeout(
       () => socket.emit('move_token', { tokenIdx: option.moves[0], diceId: option.id }),
       250
@@ -311,10 +389,14 @@ export default function App() {
     localStorage.setItem('ludo-name', clean);
     return clean;
   };
-  const findMatch = (_bet, queueType = 'normal') => {
+  const findMatch = (bet, queueType = 'normal') => {
     const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     matchmakingRequestRef.current = requestId;
     cancelledMatchmakingRef.current = false;
+    const numericBet = Number(bet);
+    setMatchWinAmount(Number.isFinite(numericBet) && numericBet > 0
+      ? Math.round(numericBet * 2 * 0.9)
+      : null);
     socket.emit('find_match', { mode: 2, name: cleanName(), requestId, queueType });
   };
   const createRoom = (mode) => socket.emit('create_room', { mode, name: cleanName() });
@@ -410,8 +492,10 @@ export default function App() {
               ? 'roll_capture_bonus'
               : 'roll_dice'
         )}
+        soundMuted={soundMuted}
         onChat={() => setChatOpen(true)}
         bubble={bubbles[color]}
+        avatar={color === myColor ? playerAvatar : ''}
       />
     );
   };
@@ -478,6 +562,7 @@ export default function App() {
         <PlayerHome
           name={name}
           onNameChange={setName}
+          onAvatarChange={setPlayerAvatar}
           onFindMatch={findMatch}
           token={authSession.token}
           onSignOut={signOut}
@@ -551,7 +636,18 @@ export default function App() {
       {inGame && (
         <div className="game">
           {status === 'playing' && (
-            <GameExitButton onClick={() => setLeaveOpen(true)} />
+            <GameTopBar
+              onLeave={() => setLeaveOpen(true)}
+              winAmount={matchWinAmount}
+              soundMuted={soundMuted}
+              onToggleMute={() => {
+                setSoundMuted((muted) => {
+                  const nextMuted = !muted;
+                  localStorage.setItem('ludo-sound-muted', String(nextMuted));
+                  return nextMuted;
+                });
+              }}
+            />
           )}
 
           <div className="prow prow-top">{colorsInRow('top').map(renderSlot)}</div>
@@ -567,6 +663,7 @@ export default function App() {
             movable={movable}
             diceOptions={diceOptions}
             rollId={game.rollId}
+            soundMuted={soundMuted}
             onMove={(idx, diceId) => socket.emit('move_token', { tokenIdx: idx, diceId })}
           />
 

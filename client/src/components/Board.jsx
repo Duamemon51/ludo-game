@@ -1,22 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  COLORS, LIGHT, PATH, LANES, START, SAFE, BASE_SPOTS, layoutTokens,
+  COLORS, PATH, LANES, START, BASE_SPOTS, FINISH_XY, HOME_TRIANGLES, layoutTokens,
 } from '../ludoLayout';
-
-const BLOCKS = [
-  ['red', 0, 0],
-  ['green', 9, 0],
-  ['yellow', 9, 9],
-  ['blue', 0, 9],
-];
-const TRIANGLES = {
-  red: '6,6 6,9 7.5,7.5',
-  green: '6,6 9,6 7.5,7.5',
-  yellow: '9,6 9,9 7.5,7.5',
-  blue: '6,9 9,9 7.5,7.5',
-};
+import BoardBackground from './BoardBackground';
 const RADIUS = 0.36;
-const HOP_MS = 110;
+const MOVE_STEP_MS = 250;
 const HOME_FX_MS = 1500;
 const CONFETTI = 16;
 const GOLD = '#fbbf24';
@@ -32,11 +20,34 @@ const centroid = (points) => {
 // A token that reached the middle square of the board is home
 const isHome = (t) => t.x > 6.05 && t.x < 8.95 && t.y > 6.05 && t.y < 8.95;
 
+function squareCenter(color, position) {
+  if (position <= 51) {
+    const [row, column] = PATH[(START[color] + position) % 52];
+    return [column + 0.5, row + 0.5];
+  }
+  if (position <= 56) {
+    const [row, column] = LANES[color][position - 52];
+    return [column + 0.5, row + 0.5];
+  }
+  return FINISH_XY[color];
+}
+
+function getMovePositions(from, to, captures) {
+  const positions = [from];
+  let position = from;
+  while (position !== to && positions.length <= 60) {
+    if (captures > 0 && position === 50 && to > 51) position = 52;
+    else if (position >= 0 && to > position) position += 1;
+    else if (position >= 46 && to < 6) position = (position + 1) % 52;
+    else position = to;
+    positions.push(position);
+  }
+  return positions;
+}
+
 export default function Board({
-  tokens, captures = {}, lastMove, celebrateWinner, turn, myColor, rotation = 0, movable, diceOptions, rollId, onMove,
+  tokens, captures = {}, lastMove, celebrateWinner, turn, myColor, rotation = 0, movable, diceOptions, rollId, onMove, soundMuted,
 }) {
-  // `shown` follows `tokens` one square at a time, so tokens hop like in real Ludo
-  const [shown, setShown] = useState(tokens);
   const [kill, setKill] = useState(null);
   const [announce, setAnnounce] = useState(null);
   const [pendingCapture, setPendingCapture] = useState(null);
@@ -44,31 +55,156 @@ export default function Board({
   const [homeFx, setHomeFx] = useState([]);
   const previousTokens = useRef(tokens);
   const lastMoveId = useRef(lastMove?.id);
+  const lastAnimatedMoveId = useRef(lastMove?.id);
   const killTimer = useRef(null);
   const captureRun = useRef(null);
   const homedRef = useRef(null);
   const homeTimer = useRef(null);
+  const moveAudio = useRef(null);
+  const captureAudio = useRef(null);
+  const captureAudioUnlocked = useRef(false);
+  const captureAudioUnlocking = useRef(false);
+  const victoryAudio = useRef(null);
+  const victoryAudioUnlocked = useRef(false);
+  const victoryAudioUnlocking = useRef(false);
+  const playedWinner = useRef(null);
+  const moveSoundPosition = useRef(lastMove?.id);
+  const tokenElements = useRef(new Map());
 
   useEffect(() => {
-    const id = setInterval(() => {
-      setShown((cur) => {
-        let changed = false;
-        const next = {};
-        for (const color of Object.keys(tokens)) {
-          next[color] = (cur[color] || tokens[color]).map((p, i) => {
-            const target = tokens[color][i];
-            if (p === target) return p;
-            changed = true;
-            if (captures[color] > 0 && p === 50 && target > 51) return 52;
-            if (p >= 0 && target > p) return p + 1; // hop forward one square
-            if (p >= 46 && target < 6) return (p + 1) % 52;
-            return target;                          // leaving base or captured: jump
-          });
-        }
-        return changed ? next : cur;
-      });
-    }, HOP_MS);
-    return () => clearInterval(id);
+    // CC0 sound: "Woodblock-soft.wav" by hollandm.
+    moveAudio.current = new Audio('/sounds/piece-move.mp3');
+    moveAudio.current.preload = 'auto';
+    moveAudio.current.volume = 0.14;
+    moveAudio.current.playbackRate = 0.9;
+    // CC0 sound: "LowHit_01.wav" by Faulkin.
+    captureAudio.current = new Audio('/sounds/capture-hit.mp3');
+    captureAudio.current.preload = 'auto';
+    captureAudio.current.volume = 0.45;
+    // CC0 sound: "Game Success Fanfare Short" by el_boss.
+    victoryAudio.current = new Audio('/sounds/victory-fanfare.mp3');
+    victoryAudio.current.preload = 'auto';
+    victoryAudio.current.volume = 0.45;
+    return () => {
+      moveAudio.current?.pause();
+      captureAudio.current?.pause();
+      victoryAudio.current?.pause();
+      moveAudio.current = null;
+      captureAudio.current = null;
+      victoryAudio.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (soundMuted) return;
+    const unlockAudio = (audio, unlocked, unlocking) => {
+      if (!audio || unlocked.current || unlocking.current) return;
+      unlocking.current = true;
+      audio.muted = true;
+      audio.currentTime = 0;
+      audio.play()
+        .then(() => {
+          audio.pause();
+          audio.currentTime = 0;
+          audio.muted = false;
+          unlocked.current = true;
+          unlocking.current = false;
+        })
+        .catch((error) => {
+          audio.muted = false;
+          unlocking.current = false;
+          console.warn('Could not unlock game sound:', error);
+        });
+    };
+    const unlockGameAudio = () => {
+      unlockAudio(captureAudio.current, captureAudioUnlocked, captureAudioUnlocking);
+      unlockAudio(victoryAudio.current, victoryAudioUnlocked, victoryAudioUnlocking);
+      if (captureAudioUnlocked.current && victoryAudioUnlocked.current) {
+        document.removeEventListener('pointerdown', unlockGameAudio);
+      }
+    };
+
+    document.addEventListener('pointerdown', unlockGameAudio);
+    return () => document.removeEventListener('pointerdown', unlockGameAudio);
+  }, [soundMuted]);
+
+  useEffect(() => {
+    if (soundMuted || !kill?.sequence || !captureAudio.current) return;
+    captureAudio.current.currentTime = 0;
+    captureAudio.current.play().catch((error) => {
+      console.warn('Could not play capture sound:', error);
+    });
+  }, [kill?.sequence, soundMuted]);
+
+  useEffect(() => {
+    if (soundMuted || !celebrateWinner || playedWinner.current === celebrateWinner || !victoryAudio.current) return;
+    playedWinner.current = celebrateWinner;
+    victoryAudio.current.currentTime = 0;
+    victoryAudio.current.play().catch((error) => {
+      console.warn('Could not play victory fanfare:', error);
+    });
+  }, [celebrateWinner, soundMuted]);
+
+  useEffect(() => {
+    if (soundMuted || !lastMove?.id) return;
+    if (moveSoundPosition.current === lastMove.id) return;
+    moveSoundPosition.current = lastMove.id;
+    const audio = moveAudio.current;
+    if (!audio) return;
+    audio.currentTime = 0;
+    audio.play().catch((error) => {
+      console.warn('Could not play token move sound:', error);
+    });
+  }, [lastMove, soundMuted]);
+
+  useEffect(() => {
+    if (!soundMuted) return;
+    moveAudio.current?.pause();
+    captureAudio.current?.pause();
+    victoryAudio.current?.pause();
+  }, [soundMuted]);
+
+  useLayoutEffect(() => {
+    const movingToken = lastMove?.color && Number.isInteger(lastMove.tokenIdx)
+      ? `${lastMove.color}-${lastMove.tokenIdx}`
+      : null;
+    const from = movingToken ? previousTokens.current[lastMove.color]?.[lastMove.tokenIdx] : null;
+    const to = movingToken ? tokens[lastMove.color]?.[lastMove.tokenIdx] : null;
+
+    if (
+      movingToken
+      && lastMove.id !== lastAnimatedMoveId.current
+      && from >= 0
+      && to >= 0
+      && from !== to
+    ) {
+      lastAnimatedMoveId.current = lastMove.id;
+      const element = tokenElements.current.get(movingToken);
+      if (element?.animate) {
+        const positions = getMovePositions(from, to, captures[lastMove.color] || 0);
+        const start = layoutTokens(previousTokens.current).find(
+          (token) => `${token.color}-${token.idx}` === movingToken
+        );
+        const end = layoutTokens(tokens).find(
+          (token) => `${token.color}-${token.idx}` === movingToken
+        );
+        const keyframes = [
+          { transform: `translate(${start.x}px, ${start.y}px)` },
+          ...positions.slice(1, -1).map((position) => {
+            const [x, y] = squareCenter(lastMove.color, position);
+            return { transform: `translate(${x}px, ${y}px)` };
+          }),
+          { transform: `translate(${end.x}px, ${end.y}px)` },
+        ];
+        element.animate(keyframes, {
+          duration: (positions.length - 1) * MOVE_STEP_MS,
+          easing: 'linear',
+        });
+      }
+    } else if (lastMove?.id != null) {
+      lastAnimatedMoveId.current = lastMove.id;
+    }
+
   }, [tokens, captures, lastMove]);
 
   useEffect(() => {
@@ -102,12 +238,20 @@ export default function Board({
         }).filter(Boolean);
 
         if (captureItems.length) {
+          const moveFrom = previousTokens.current[lastMove.color]?.[lastMove.tokenIdx];
+          const moveTo = tokens[lastMove.color]?.[lastMove.tokenIdx];
+          const movePositions = getMovePositions(
+            moveFrom,
+            moveTo,
+            captures[lastMove.color] || 0
+          );
           setPendingCapture({
             id: lastMove.id,
             killerColor: lastMove.color,
             killerTokenIdx: lastMove.tokenIdx,
             target: tokens[lastMove.color][lastMove.tokenIdx],
             captures: captureItems,
+            moveDuration: (movePositions.length - 1) * MOVE_STEP_MS,
           });
         }
       }
@@ -123,7 +267,6 @@ export default function Board({
       captureRun.current = { id: pendingCapture.id, started: false };
     }
     if (captureRun.current.started) return;
-    if (shown[pendingCapture.killerColor]?.[pendingCapture.killerTokenIdx] !== pendingCapture.target) return;
 
     captureRun.current.started = true;
     const showCapture = (index) => {
@@ -153,13 +296,13 @@ export default function Board({
       }, 220);
     };
 
-    showCapture(0);
-  }, [pendingCapture, shown]);
+    killTimer.current = setTimeout(showCapture, pendingCapture.moveDuration, 0);
+  }, [pendingCapture]);
 
   // A token just landed in the centre: celebrate (not for tokens already home on first load)
   useEffect(() => {
     const now = new Set(
-      layoutTokens(shown).filter(isHome).map((t) => `${t.color}-${t.idx}`)
+      layoutTokens(tokens).filter(isHome).map((t) => `${t.color}-${t.idx}`)
     );
     if (homedRef.current === null) {
       homedRef.current = now;
@@ -175,7 +318,7 @@ export default function Board({
     }));
     clearTimeout(homeTimer.current);
     homeTimer.current = setTimeout(() => setHomeFx([]), HOME_FX_MS);
-  }, [shown]);
+  }, [tokens]);
 
   useEffect(
     () => () => {
@@ -185,7 +328,7 @@ export default function Board({
     []
   );
 
-  const items = layoutTokens(shown);
+  const items = layoutTokens(tokens);
   const choiceToken = choiceTokenId?.rollId === rollId
     ? items.find((item) => `${item.color}-${item.idx}` === choiceTokenId.id)
     : null;
@@ -197,87 +340,11 @@ export default function Board({
     <>
     <div className="board-orientation" style={{ '--board-rotation': `${rotation}deg` }}>
     <svg viewBox="0 0 15 15" className={`board${kill ? ' shake' : ''}${celebrateWinner ? ' win-shake' : ''}`}>
-      <rect width="15" height="15" fill="#fff" />
-
-      {/* Home bases */}
-      {BLOCKS.map(([color, x, y]) => (
-        <g key={color}>
-          <rect x={x} y={y} width="6" height="6" fill={COLORS[color]} />
-          <rect x={x + 1} y={y + 1} width="4" height="4" rx="0.5" fill="#fff" />
-          {BASE_SPOTS[color].map(([cx, cy], i) => (
-            <circle
-              key={i} cx={cx} cy={cy} r="0.55"
-              fill={LIGHT[color]} stroke={COLORS[color]} strokeWidth="0.06"
-            />
-          ))}
-          {turn === color && (
-            <rect
-              className="glow" x={x + 0.1} y={y + 0.1} width="5.8" height="5.8"
-              fill="none" stroke="#fff" strokeWidth="0.22"
-            />
-          )}
-        </g>
-      ))}
-
-      {/* Main track */}
-      {PATH.map(([r, c], abs) => {
-        const owner = Object.keys(START).find((k) => START[k] === abs);
-        return (
-          <g key={abs}>
-            <rect
-              x={c} y={r} width="1" height="1"
-              fill={owner ? COLORS[owner] : '#fff'} stroke="#555" strokeWidth="0.04"
-            />
-            {SAFE.includes(abs) && (
-              <text
-                x={c + 0.5} y={r + 0.5} fontSize="0.8" textAnchor="middle"
-                dominantBaseline="central" fill={owner ? '#fff' : '#9e9e9e'}
-              >
-                ★
-              </text>
-            )}
-          </g>
-        );
-      })}
-
-      {/* Home lanes */}
-      {Object.entries(LANES).map(([color, cells]) =>
-        cells.map(([r, c], i) => (
-          <rect
-            key={color + i} x={c} y={r} width="1" height="1"
-            fill={COLORS[color]} stroke="#555" strokeWidth="0.04"
-          />
-        ))
-      )}
-
-      {/* Home-lane entry stays locked until this player captures an opponent token. */}
-      {Object.keys(captures).filter((color) => captures[color] < 1).map((color) => {
-        const [r, c] = LANES[color][0];
-        return (
-          <g
-            key={`${color}-home-lock`}
-            transform={`translate(${c + 0.5} ${r + 0.5}) scale(0.035) translate(-12 -12)`}
-            pointerEvents="none"
-            fill="none"
-            stroke="#fff"
-            strokeWidth="2.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <circle cx="12" cy="12" r="9" fill="#3b2412" />
-            <path d="m6 18 12-12" />
-          </g>
-        );
-      })}
-
-      {/* Center */}
-      {Object.entries(TRIANGLES).map(([color, points]) => (
-        <polygon key={color} points={points} fill={COLORS[color]} stroke="#555" strokeWidth="0.04" />
-      ))}
+      <BoardBackground turn={turn} captures={captures} />
 
       {/* Tokens */}
       {items.map((t) => {
-        const settled = shown[t.color][t.idx] === tokens[t.color][t.idx];
+        const settled = true;
         const canMove = t.color === myColor && movable.includes(t.idx) && settled && !pendingCapture;
         const r = RADIUS * t.scale;
         const id = `${t.color}-${t.idx}`;
@@ -288,6 +355,11 @@ export default function Board({
         return (
           <g
             key={t.color + t.idx}
+            ref={(element) => {
+              const tokenId = `${t.color}-${t.idx}`;
+              if (element) tokenElements.current.set(tokenId, element);
+              else tokenElements.current.delete(tokenId);
+            }}
             className={`token${canMove ? ' movable' : ''}${isCaptured ? ' captured' : ''}${isKiller ? ' killer' : ''}${isHoming ? ' homing' : ''}${isWinner ? ' winner-token' : ''}`}
             style={{
               transform: `translate(${isCaptured ? kill.x : t.x}px, ${isCaptured ? kill.y : t.y}px)`,
@@ -392,10 +464,10 @@ export default function Board({
 
       {/* Home celebration: triangle flash, shock rings, confetti, HOME! text */}
       {homeFx.map((fx) => {
-        const [cx, cy] = centroid(TRIANGLES[fx.color]);
+        const [cx, cy] = centroid(HOME_TRIANGLES[fx.color]);
         return (
           <g key={fx.seq} style={{ pointerEvents: 'none' }}>
-            <polygon className="home-flash" points={TRIANGLES[fx.color]} />
+            <polygon className="home-flash" points={HOME_TRIANGLES[fx.color]} />
             <g className="home-rays">
               {Array.from({ length: 12 }, (_, i) => {
                 const angle = (i / 12) * Math.PI * 2;

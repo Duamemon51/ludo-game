@@ -13,6 +13,12 @@ export const LIGHT = {
 
 export const START = { red: 0, green: 13, yellow: 26, blue: 39 };
 export const SAFE = [0, 8, 13, 21, 26, 34, 39, 47];
+export const HOME_TRIANGLES = {
+  red: '6,6 6,9 7.5,7.5',
+  green: '6,6 9,6 7.5,7.5',
+  yellow: '9,6 9,9 7.5,7.5',
+  blue: '6,9 9,9 7.5,7.5',
+};
 
 // The 52 main-track squares as [row, col], clockwise, starting at red's start square
 export const PATH = [
@@ -47,7 +53,7 @@ export const BASE_SPOTS = {
 };
 
 // Where finished tokens sit (inside each color's center triangle)
-const FINISH_XY = {
+export const FINISH_XY = {
   red: [6.85, 7.5],
   green: [7.5, 6.85],
   yellow: [8.15, 7.5],
