@@ -804,7 +804,7 @@ export default function PlayerHome({ name, onNameChange, onFindMatch, token, onS
           .ph-sheet { padding: 14px; }
           .ph-panel { padding: 14px; }
         }
-        @media (prefers-reduced-motion: reduce) { .ph-menu, .ph-scrim { animation: none; } }
+        @media (prefers-reduced-motion: reduce) { .ph-menu, .ph-scrim { animation: none; } .ph-coin, .ph-plus { transition: none; } }
 
         /* colorful Ludo mode cards + bouncing title */
         .ph-mode-duel { background: linear-gradient(150deg, #ffe3df, #f4a79f); box-shadow: 0 4px 0 #a82a24, 0 7px 12px #3b24122e; }
@@ -819,11 +819,17 @@ export default function PlayerHome({ name, onNameChange, onFindMatch, token, onS
         .ph-server-warning { background: #2a0b3a88; color: #ffe0ad; }
 
         /* coin wallet pill */
-        .ph-wallet { display: flex; align-items: center; gap: 8px; min-width: 124px; height: 42px; padding: 4px 6px; background: linear-gradient(180deg, #7a2d86e6, #4b1659e6); box-shadow: inset 0 0 0 1.5px #ffffff40, 0 4px 10px #0006; }
+        .ph-wallet { position: relative; display: flex; align-items: center; gap: 8px; min-width: 132px; height: 46px; padding: 5px 7px; border: 1px solid #ffe27a; background: linear-gradient(145deg, #8b3c9f, #511b68 55%, #351044); box-shadow: inset 0 1px 0 #ffffff45, inset 0 -3px 0 #17082180, 0 0 0 2px #351044, 0 5px 0 #240a35, 0 9px 14px #0006; transition: filter .15s, transform .15s, box-shadow .15s; }
+        .ph-wallet:hover { filter: brightness(1.12); box-shadow: inset 0 1px 0 #ffffff55, inset 0 -3px 0 #17082180, 0 0 0 2px #351044, 0 5px 0 #240a35, 0 0 14px #fcc41980; }
+        .ph-wallet:focus-visible { outline: 3px solid #fff1a8; outline-offset: 3px; }
         .ph-wallet small { display: none; }
-        .ph-wallet strong { flex: 1; color: #fff; font-size: 18px; text-align: center; white-space: nowrap; }
-        .ph-coin { flex: none; width: 30px; height: 30px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff1a8, #fcc419 55%, #e0a000); box-shadow: 0 0 0 2px #b97a00, 0 2px 4px #0006; }
-        .ph-plus { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; color: #fff; background: linear-gradient(180deg, #7be08a, #2f9a45); box-shadow: 0 0 0 2px #1d6b2e; font-family: 'Lilita One', sans-serif; font-size: 18px; line-height: 1; }
+        .ph-wallet strong { flex: 1; color: #fff5cf; font-family: 'Lilita One', sans-serif; font-size: 18px; font-weight: 400; text-align: center; text-shadow: 0 2px 2px #170821; white-space: nowrap; }
+        .ph-coin { position: relative; display: grid; flex: none; place-items: center; width: 34px; height: 34px; border: 2px solid #a95b00; border-radius: 50%; color: #a34a00; background: radial-gradient(circle at 32% 23%, #fffbdc 0 5%, #ffe783 18%, #ffc629 48%, #e99408 78%, #b96600 100%); box-shadow: inset 0 0 0 2px #fff4ad, inset 0 -3px 0 #b86f00a6, 0 0 0 1px #ffe27a, 0 3px 5px #16091c99; transition: transform .45s cubic-bezier(.2,.8,.2,1); }
+        .ph-coin::before { content: ''; position: absolute; inset: 4px; border: 1px solid #bd790b; border-radius: 50%; box-shadow: inset 0 1px 0 #fff8; }
+        .ph-coin svg { position: relative; z-index: 1; width: 20px; height: 20px; filter: drop-shadow(0 1px 0 #fff8); }
+        .ph-wallet:hover .ph-coin { transform: rotateY(180deg) rotate(-12deg); }
+        .ph-plus { flex: none; display: grid; place-items: center; width: 27px; height: 27px; border: 1.5px solid #b4ffc0; border-radius: 50%; color: #fff; background: linear-gradient(180deg, #73e58c, #27a64c 60%, #168039); box-shadow: inset 0 1px 0 #ffffff70, 0 2px 0 #125b2b, 0 2px 4px #0007; font-family: 'Lilita One', sans-serif; font-size: 19px; line-height: 1; text-shadow: 0 1px 1px #145b2b; transition: transform .15s; }
+        .ph-wallet:hover .ph-plus { transform: scale(1.08); }
 
         /* big glossy mode cards */
         .ph-mode { border: 0; color: #fff; }
@@ -970,9 +976,7 @@ export default function PlayerHome({ name, onNameChange, onFindMatch, token, onS
         .ph-xp-track { position: relative; display: flex; flex: 1; align-items: center; justify-content: center; height: 16px; overflow: hidden; border-radius: 99px; background: #1d0a2b; box-shadow: inset 0 2px 3px #000a, 0 0 0 1px #ffffff26; }
         .ph-xp-track i { position: absolute; top: 0; bottom: 0; left: 0; border-radius: inherit; background: linear-gradient(180deg, #ffe27a, #fcc419 55%, #e0a000); }
         .ph-xp-track b { position: relative; z-index: 1; padding-left: 8px; color: #fff; font-family: 'Lilita One', sans-serif; font-size: 11px; font-weight: 400; text-shadow: 0 1px 1px #000c; }
-        .ph-wallet { height: 46px; min-width: 118px; padding: 5px 7px; border-radius: 99px; box-shadow: inset 0 0 0 1.5px #ffffff40, 0 5px 0 #240a35, 0 9px 14px #0006; }
-        .ph-coin { width: 32px; height: 32px; }
-        .ph-plus { width: 26px; height: 26px; }
+        .ph-wallet { min-width: 132px; }
         @media (max-width: 380px) {
           .ph-brand { padding-right: 10px; }
           .ph-ava-wrap .ph-avatar { width: 42px; height: 42px; font-size: 21px; }
@@ -1001,7 +1005,15 @@ export default function PlayerHome({ name, onNameChange, onFindMatch, token, onS
         </div>
         <div className="ph-account">
           <button type="button" className="ph-wallet" aria-label={`Available balance ${availableBalance.toLocaleString()}. Open wallet`} onClick={() => setPage('wallet')}>
-            <span className="ph-coin" aria-hidden="true" />
+            <span className="ph-coin" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <circle cx="8" cy="8" r="6.1" fill="#e69a0a" stroke="#fff1a8" strokeWidth="1" />
+                <circle cx="16" cy="16" r="6.1" fill="#ffc52e" stroke="#9e5700" strokeWidth="1.2" />
+                <circle cx="16" cy="16" r="4.6" stroke="#fff1a8" strokeWidth=".8" />
+                <path d="m16 12.6 1.05 2.15 2.38.35-1.72 1.68.4 2.37L16 18.03l-2.11 1.12.4-2.37-1.72-1.68 2.38-.35L16 12.6Z" fill="#fff3b0" stroke="#b56a00" strokeWidth=".55" strokeLinejoin="round" />
+                <path d="M5.2 4.7 6.5 4" stroke="#fffbdc" strokeWidth="1.1" strokeLinecap="round" />
+              </svg>
+            </span>
             <small>AVAILABLE</small><strong>{availableBalance.toLocaleString()}</strong>
             <span className="ph-plus" aria-hidden="true">+</span>
           </button>

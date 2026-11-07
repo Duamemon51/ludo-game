@@ -109,8 +109,14 @@ export default function GameDice({ value, color, canRoll, onRoll, rollId }) {
           78% { transform: scale(.9); opacity: .8; }
         }
         @media (prefers-reduced-motion: reduce) {
-          .gd-hop, .gd-tumble { transition: none; animation: none !important; }
+          .gd-hop { transition: none; animation: none !important; }
+          .gd-tumble { transition: none; }
+          .gd-tumble.rolling { animation: gd-tumble-reduced var(--roll) ease-out both !important; }
           .gd-shadow { animation: none !important; }
+          @keyframes gd-tumble-reduced {
+            from { transform: rotateX(0deg) rotateY(0deg); }
+            to { transform: rotateX(360deg) rotateY(360deg); }
+          }
         }
       `}</style>
 
