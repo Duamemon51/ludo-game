@@ -1,6 +1,6 @@
 const assert = require('assert');
 const engine = require('./engine');
-const { chooseMove } = require('./bot');
+const { chooseMove, chooseTurnMove } = require('./bot');
 
 // Test 1: bot prefers a capture
 let s = engine.createGame(['red', 'yellow']);
@@ -11,9 +11,73 @@ console.log('PASS: bot captures when it can');
 
 // Test 2: bot prefers reaching home
 s = engine.createGame(['red', 'yellow']);
-s.tokens.red = [53, 10, -1, -1];
+s.captures.red = engine.CAPTURES_TO_UNLOCK_HOME;
+s.tokens.red = [engine.FINISH - 3, 10, -1, -1];
 assert.strictEqual(chooseMove(s, 'red', 3, 'hard'), 0);
 console.log('PASS: bot goes home when it can');
+
+// Quick 1v1 bot recognizes finishing one token as a win.
+s = engine.createGame(['red', 'yellow'], { tokensToWin: 1 });
+s.captures.red = engine.CAPTURES_TO_UNLOCK_HOME;
+s.tokens.red = [54, 10, -1, -1];
+assert.strictEqual(chooseMove(s, 'red', 3, 'hard'), 0);
+console.log('PASS: bot chooses the winning move in Quick 1v1');
+
+// Multi-dice planning finds a sequence that wins with the available dice.
+s = engine.createGame(['red', 'yellow'], { tokensToWin: 1 });
+s.captures.red = engine.CAPTURES_TO_UNLOCK_HOME;
+s.tokens.red[0] = 54;
+let diceOptions = [
+  { id: 0, value: 2 },
+  { id: 1, value: 3 },
+];
+const originalRandom = Math.random;
+Math.random = () => 0;
+try {
+  while (!s.winner && diceOptions.length > 0) {
+    const plannedMove = chooseTurnMove(s, 'red', diceOptions, 'expert');
+    assert.ok(plannedMove, 'planner should return a move while a winning sequence exists');
+    const option = diceOptions.find(({ id }) => id === plannedMove.id);
+    assert.ok(option, 'planner should return an available die');
+    engine.applyMove(s, 'red', plannedMove.tokenIdx, option.value);
+    diceOptions = diceOptions.filter(({ id }) => id !== plannedMove.id);
+  }
+} finally {
+  Math.random = originalRandom;
+}
+assert.strictEqual(s.winner, 'red');
+console.log('PASS: multi-dice planner finds a winning sequence');
+
+// Quick difficulty boosts prefer the best-scored plan more often than Normal.
+const quickGame = engine.createGame(['red', 'yellow'], { tokensToWin: 1 });
+quickGame.tokens.red = [0, 1, -1, -1];
+quickGame.tokens.yellow[0] = 0;
+const normalGame = { ...quickGame, tokensToWin: 4 };
+const originalRandomForQuickTest = Math.random;
+try {
+  for (const [level, quickThreshold] of [
+    ['expert', 0.999],
+    ['hard', 0.729],
+    ['medium', 0.469],
+    ['easy', 0.229],
+  ]) {
+    Math.random = () => quickThreshold;
+    assert.deepStrictEqual(
+      chooseTurnMove(quickGame, 'red', [{ id: 0, value: 1 }], level),
+      { tokenIdx: 1, id: 0 },
+      `Quick ${level} should select the best-scored plan at its configured threshold`
+    );
+    Math.random = () => 0.999;
+    assert.deepStrictEqual(
+      chooseTurnMove(normalGame, 'red', [{ id: 0, value: 1 }], level),
+      { tokenIdx: 0, id: 0 },
+      `Normal ${level} should retain its existing fallback selection`
+    );
+  }
+} finally {
+  Math.random = originalRandomForQuickTest;
+}
+console.log('PASS: Quick Expert, Hard, and Medium use boosted plan selection');
 
 // Test 3: bot returns null when it has no moves
 s = engine.createGame(['red', 'yellow']);
