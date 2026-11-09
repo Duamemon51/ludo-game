@@ -57,6 +57,35 @@ try {
     captureBonusSixes: 2,
   }), 6, 'bot should avoid forfeiting a capture bonus turn on a third 6');
 
+  for (const [cooldownRoll, expectedCooldown] of [[0.2, 1], [0.7, 2]]) {
+    const expertSeat = { color: 'red', isBot: true, level: 'expert' };
+    const expertDiceRoom = {
+      game: engine.createGame(['red', 'yellow']),
+      seats: [expertSeat],
+      phase: 'roll',
+      rolledDice: [],
+    };
+    let randomValues = [cooldownRoll, cooldownRoll];
+    Math.random = () => randomValues.shift() ?? 0;
+    assert.strictEqual(rollDiceForCurrentPlayer(expertDiceRoom), 6);
+    assert.strictEqual(expertSeat.sixCooldown, expectedCooldown);
+
+    expertDiceRoom.phase = 'bonus-roll';
+    expertDiceRoom.rolledDice = [6];
+    Math.random = () => 0;
+    for (let remaining = expectedCooldown; remaining > 0; remaining--) {
+      assert.notStrictEqual(rollDiceForCurrentPlayer(expertDiceRoom), 6);
+      assert.strictEqual(expertSeat.sixCooldown, remaining - 1);
+    }
+
+    expertDiceRoom.phase = 'roll';
+    expertDiceRoom.rolledDice = [];
+    randomValues = [0.2, 0.2];
+    Math.random = () => randomValues.shift() ?? 0;
+    assert.strictEqual(rollDiceForCurrentPlayer(expertDiceRoom), 6);
+  }
+  console.log('PASS: expert bot randomly spaces sixes by one or two rolls');
+
   const captureGame = engine.createGame(['red', 'yellow']);
   captureGame.captures.red = engine.CAPTURES_TO_UNLOCK_HOME;
   captureGame.tokens.red[0] = 4;
