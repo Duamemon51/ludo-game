@@ -19,10 +19,10 @@ const EXPERT_MS = Number(process.env.LUDO_BOT_MS) || 350;
 
 const LEVEL_STRENGTH = {
   expert: 0.95,
-  hard: 0.75,
-  medium: 0.50,
+  hard: 0.90,
+  medium: 0.80,
   easy: 0.25,
-  takeover: 0.25,
+  takeover: 0.10,
 };
 
 const QUICK_LEVEL_STRENGTH = {
@@ -30,13 +30,15 @@ const QUICK_LEVEL_STRENGTH = {
   hard: 0.73,
   medium: 0.47,
   easy: 0.23,
+  takeover: 0.10,
 };
 
 const NORMAL_LEVEL_STRENGTH = {
-  expert: 0.88,
+  expert: 1,
   hard: 0.60,
   medium: 0.41,
   easy: 0.25,
+  takeover: 0.10,
 };
 
 function normalizeLevel(level = 'medium') {
@@ -97,14 +99,14 @@ function isThreatened(state, color, rel) {
   return false;
 }
 
-function capturesAt(state, color, to) {
+function captureValueAt(state, color, to) {
   if (to > LAST_TRACK || to < 0) return 0;
 
   const abs = toAbs(color, to);
 
   if (SAFE.includes(abs)) return 0;
 
-  let count = 0;
+  let value = 0;
 
   for (const other of state.colors) {
     if (other === color) continue;
@@ -115,12 +117,12 @@ function capturesAt(state, color, to) {
         p <= LAST_TRACK &&
         toAbs(other, p) === abs
       ) {
-        count++;
+        value += 50 + tokenValue(p) * 0.9;
       }
     }
   }
 
-  return count;
+  return value;
 }
 
 /* -------------------------------------------------- */
@@ -139,8 +141,11 @@ function scoreMove(state, color, tokenIdx, dice) {
 
   let score = 0;
 
-  // Capture opponent tokens.
-  score += capturesAt(state, color, to) * 50;
+  // Prefer capturing opponents who have made more progress.
+  score += captureValueAt(state, color, to);
+
+  // Favor advancing the token closest to finishing.
+  score += (tokenValue(to) - tokenValue(from)) * 0.75;
 
   // Finish a token.
   if (to === FINISH) {
@@ -166,15 +171,8 @@ function scoreMove(state, color, tokenIdx, dice) {
     score += 15;
   }
 
-  // Move a threatened token away.
-  if (isThreatened(state, color, from)) {
-    score += 25;
-  }
-
-  // Avoid landing on a threatened square.
-  if (isThreatened(state, color, to)) {
-    score -= 30;
-  }
+  const riskImprovement = hitRisk(state, color, from) - hitRisk(state, color, to);
+  score += riskImprovement * Math.max(10, from + 10) * 8;
 
   score += dice;
 
@@ -263,14 +261,14 @@ function tokenValue(pos) {
   if (pos === BASE) return 0;
 
   if (pos === FINISH) {
-    return 85;
+    return 190;
   }
 
-  return pos + 1 + 8;
+  return pos + 8 + pos * pos * 0.02;
 }
 
 function sideScore(state, color) {
-  let score = 0;
+  let score = state.captures[color] * 8;
 
   for (const pos of state.tokens[color]) {
     const value = tokenValue(pos);
@@ -280,7 +278,7 @@ function sideScore(state, color) {
     if (pos >= 0 && pos < FINISH) {
       // Home lane is safe.
       if (pos > LAST_TRACK) {
-        score += 4;
+        score += 4 + (pos - LAST_TRACK) * 1.5;
       }
 
       // Safe square.
@@ -290,7 +288,7 @@ function sideScore(state, color) {
 
       // Possible opponent capture.
       else {
-        score -= value * hitRisk(state, color, pos) * 0.9;
+        score -= value * hitRisk(state, color, pos) * 2;
       }
     }
   }
@@ -325,6 +323,40 @@ function evaluate(state, me) {
     0.6 * (total / opponents.length) -
     0.4 * strongestOpponent
   );
+}
+
+function evaluateExpertReply(state, me) {
+  const opponents = state.colors.filter((color) => color !== me);
+  if (opponents.length === 0) return evaluate(state, me);
+
+  let worstReply = Infinity;
+
+  for (const opponent of opponents) {
+    let expectedReply = 0;
+
+    for (let dice = 1; dice <= 6; dice++) {
+      const moves = getValidMoves(state, opponent, dice);
+      if (moves.length === 0) {
+        expectedReply += evaluate(state, me);
+        continue;
+      }
+
+      let opponentBest = Infinity;
+      for (const tokenIdx of moves) {
+        const reply = cloneState(state);
+        applyMove(reply, opponent, tokenIdx, dice);
+        const value = reply.winner === opponent
+          ? -100000
+          : evaluate(reply, me);
+        opponentBest = Math.min(opponentBest, value);
+      }
+      expectedReply += opponentBest;
+    }
+
+    worstReply = Math.min(worstReply, expectedReply / 6);
+  }
+
+  return worstReply;
 }
 
 /* -------------------------------------------------- */
@@ -570,9 +602,12 @@ function chooseTurnMove(
     // No remaining usable dice.
     if (choices.length === 0) {
       if (firstMove) {
+        const positionValue = level === 'expert'
+          ? evaluateExpertReply(current, color)
+          : evaluate(current, color);
         saveCandidate(
           firstMove,
-          evaluate(current, color) + tacticalScore
+          positionValue + tacticalScore
         );
       }
 
@@ -712,5 +747,6 @@ module.exports = {
   chooseTurnMove,
   scoreMove,
   isThreatened,
+  evaluateExpertReply,
   LEVEL_STRENGTH,
 };

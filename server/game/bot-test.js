@@ -1,6 +1,6 @@
 const assert = require('assert');
 const engine = require('./engine');
-const { chooseMove, chooseTurnMove } = require('./bot');
+const { chooseMove, chooseTurnMove, evaluateExpertReply } = require('./bot');
 
 // Test 1: bot prefers a capture
 let s = engine.createGame(['red', 'yellow']);
@@ -15,6 +15,37 @@ s.captures.red = engine.CAPTURES_TO_UNLOCK_HOME;
 s.tokens.red = [engine.FINISH - 3, 10, -1, -1];
 assert.strictEqual(chooseMove(s, 'red', 3, 'hard'), 0);
 console.log('PASS: bot goes home when it can');
+
+// Bot avoids moving a token onto a square an opponent can immediately capture.
+s = engine.createGame(['red', 'yellow']);
+s.tokens.red = [8, 20, -1, -1];
+s.tokens.yellow[0] = 32; // yellow at abs 6 can hit red at abs 10
+assert.deepStrictEqual(
+  chooseTurnMove(s, 'red', [{ id: 0, value: 2 }], 'expert'),
+  { tokenIdx: 1, id: 0 }
+);
+console.log('PASS: expert bot avoids an immediately threatened destination');
+
+// Prefer capturing the opponent token that has advanced furthest.
+s = engine.createGame(['red', 'yellow', 'blue']);
+s.tokens.red = [2, 8, -1, -1];
+s.tokens.yellow[0] = 37; // yellow at abs 11
+s.tokens.blue[0] = 18; // blue at abs 5, less advanced than yellow
+assert.deepStrictEqual(
+  chooseTurnMove(s, 'red', [{ id: 0, value: 3 }], 'expert'),
+  { tokenIdx: 1, id: 0 }
+);
+console.log("PASS: expert prioritizes capturing the opponent's most advanced token");
+
+// Expert plans against the opponent's next fair roll, including an immediate win.
+s = engine.createGame(['red', 'yellow'], { tokensToWin: 1 });
+s.captures.yellow = engine.CAPTURES_TO_UNLOCK_HOME;
+s.tokens.yellow[0] = 54;
+assert.ok(
+  evaluateExpertReply(s, 'red') < -10000,
+  'expert reply evaluation should heavily penalize an opponent winning next turn'
+);
+console.log('PASS: expert evaluates opponent replies and imminent wins');
 
 // Quick 1v1 bot recognizes finishing one token as a win.
 s = engine.createGame(['red', 'yellow'], { tokensToWin: 1 });
@@ -48,7 +79,7 @@ try {
 assert.strictEqual(s.winner, 'red');
 console.log('PASS: multi-dice planner finds a winning sequence');
 
-// Quick difficulty boosts prefer the best-scored plan more often than Normal.
+// Quick and Normal difficulties keep distinct plan-selection strengths.
 const quickGame = engine.createGame(['red', 'yellow'], { tokensToWin: 1 });
 quickGame.tokens.red = [0, 1, -1, -1];
 quickGame.tokens.yellow[0] = 0;
@@ -60,6 +91,7 @@ try {
     ['hard', 0.729],
     ['medium', 0.469],
     ['easy', 0.229],
+    ['takeover', 0.099],
   ]) {
     Math.random = () => quickThreshold;
     assert.deepStrictEqual(
@@ -68,16 +100,17 @@ try {
       `Quick ${level} should select the best-scored plan at its configured threshold`
     );
     Math.random = () => 0.999;
+    const expectedTokenIdx = level === 'expert' ? 1 : 0;
     assert.deepStrictEqual(
       chooseTurnMove(normalGame, 'red', [{ id: 0, value: 1 }], level),
-      { tokenIdx: 0, id: 0 },
-      `Normal ${level} should retain its existing fallback selection`
+      { tokenIdx: expectedTokenIdx, id: 0 },
+      `Normal ${level} should use the expected plan selection`
     );
   }
 } finally {
   Math.random = originalRandomForQuickTest;
 }
-console.log('PASS: Quick Expert, Hard, and Medium use boosted plan selection');
+console.log('PASS: difficulty levels use distinct Quick and Normal plan selection');
 
 // Test 3: bot returns null when it has no moves
 s = engine.createGame(['red', 'yellow']);
