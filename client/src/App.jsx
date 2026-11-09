@@ -298,7 +298,6 @@ export default function App() {
     };
     const onUpdate = (state) => {
       setConnected(true);
-      setConnectionError('');
       setGame({
         ...state,
         localDeadline: state.timeLeftMs != null ? Date.now() + state.timeLeftMs : null,
