@@ -12,9 +12,43 @@ const allowedOrigins = (process.env.CLIENT_ORIGINS || 'http://localhost:5173,htt
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+function allowClientOrigin(origin, callback) {
+  if (!origin || allowedOrigins.includes(origin)) {
+    callback(null, true);
+    return;
+  }
+
+  let url;
+  try {
+    url = new URL(origin);
+  } catch {
+    callback(new Error('Origin not allowed by CORS'));
+    return;
+  }
+
+  const octets = url.hostname.split('.').map(Number);
+  const isPrivateIpv4 = octets.length === 4
+    && octets.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255)
+    && (
+      octets[0] === 10
+      || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31)
+      || (octets[0] === 192 && octets[1] === 168)
+    );
+  const isLanDevOrigin = url.protocol === 'http:'
+    && url.port === '5173'
+    && (url.hostname === 'localhost' || url.hostname === '127.0.0.1' || isPrivateIpv4);
+
+  if (isLanDevOrigin) {
+    callback(null, true);
+    return;
+  }
+
+  callback(new Error('Origin not allowed by CORS'));
+}
+
 app.disable('x-powered-by');
 app.use(helmet());
-app.use(cors({ origin: allowedOrigins }));
+app.use(cors({ origin: allowClientOrigin }));
 app.use(express.json({ limit: '16kb' }));
 
 app.use('/', require('./routes/health'));
@@ -26,7 +60,7 @@ app.use((req, res) => res.status(404).json({ error: 'Route not found.' }));
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: allowedOrigins },
+  cors: { origin: allowClientOrigin },
   pingInterval: 10000, // detect dropped connections within about 20 seconds
   pingTimeout: 10000,
 });

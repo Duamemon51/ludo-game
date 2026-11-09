@@ -1,5 +1,5 @@
 const engine = require('../game/engine');
-const { chooseTurnMove } = require('../game/bot');
+const { chooseTurnMove, scoreMove } = require('../game/bot');
 
 const MODE_COLORS = {
   2: ['red', 'yellow'],
@@ -11,6 +11,12 @@ const MOVE_STEP_MS = 250;
 const MOVE_SETTLE_MS = 350;
 const MAX_MISSED = 1;
 const RECONNECT_MS = 60000; // how long an empty room waits for players to come back
+const GAME_CHAT_ENABLED = false;
+const BOT_SIX_CHANCE = {
+  expert: 0.8,
+  hard: 0.4,
+  medium: 0.3,
+};
 
 const BOT_NAMES = [
   'Oliver', 'Ethan', 'Liam', 'Noah', 'Mason', 'Lucas', 'Logan', 'James',
@@ -81,6 +87,84 @@ function seatOf(room, color) {
   return room.seats.find((s) => s.color === color);
 }
 
+function findCaptureDice(game, color, maxDice = 6) {
+  let bestDice = null;
+  let bestScore = -Infinity;
+
+  for (let dice = 1; dice <= maxDice; dice++) {
+    const moves = engine.getValidMoves(game, color, dice);
+    for (const tokenIdx of moves) {
+      const state = {
+        ...game,
+        tokens: Object.fromEntries(
+          game.colors.map((playerColor) => [
+            playerColor,
+            game.tokens[playerColor].slice(),
+          ])
+        ),
+        captures: { ...game.captures },
+      };
+      if (engine.applyMove(state, color, tokenIdx, dice).captured.length === 0) continue;
+
+      const score = scoreMove(game, color, tokenIdx, dice);
+      if (score > bestScore) {
+        bestDice = dice;
+        bestScore = score;
+      }
+    }
+  }
+  return bestDice;
+}
+
+function rollDiceForCurrentPlayer(room) {
+  const seat = seatOf(room, room.game.turn);
+  const sixChance = seat?.isBot ? BOT_SIX_CHANCE[seat.level] : null;
+  if (sixChance === undefined || sixChance === null) return engine.rollDice();
+
+  const consecutiveSixes = (
+    room.phase === 'bonus-roll'
+    && room.rolledDice.slice(-2).length === 2
+    && room.rolledDice.slice(-2).every((value) => value === 6)
+  ) || (
+    room.phase === 'capture-roll'
+    && room.captureBonusSixes >= 2
+  );
+  const afterSix = (
+    room.phase === 'bonus-roll'
+    && room.rolledDice[room.rolledDice.length - 1] === 6
+  ) || (
+    room.phase === 'capture-roll'
+    && room.captureBonusSixes >= 1
+  );
+  const adjustedSixChance = consecutiveSixes
+    ? 0
+    : afterSix ? sixChance * 0.25 : sixChance;
+
+  const captureDice = findCaptureDice(room.game, seat.color, consecutiveSixes ? 5 : 6);
+  if (captureDice !== null) return captureDice;
+
+  if (Math.random() < adjustedSixChance) return 6;
+
+  const weights = [1, 2, 3, 4, 5].map((dice) => {
+    const moves = engine.getValidMoves(room.game, seat.color, dice);
+    const bestMoveScore = moves.length
+      ? Math.max(...moves.map((tokenIdx) =>
+        scoreMove(room.game, seat.color, tokenIdx, dice)
+      ))
+      : 0;
+    return 1 + dice / 5 + Math.max(0, bestMoveScore) / 30;
+  });
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  let roll = Math.random() * totalWeight;
+
+  for (let i = 0; i < weights.length; i++) {
+    roll -= weights[i];
+    if (roll < 0) return i + 1;
+  }
+
+  return 5;
+}
+
 function pickBotName(usedNames) {
   const availableNames = BOT_NAMES.filter((name) => !usedNames.has(name.toLowerCase()));
   let name;
@@ -116,6 +200,9 @@ function publicState(room, viewerSocketId) {
     dice: room.dice,
     dieRollId: room.dieRollId,
     doubleRoll: room.doubleRoll,
+    rolledDice: room.rolledDice || [],
+    rolledDiceIds: room.rolledDiceIds || (room.rolledDice || []).map((_, index) => index),
+    usedDiceIds: room.usedDiceIds || [],
     diceOptions: room.diceOptions,
     rollId: room.rollId,
     validMoves: room.validMoves,
@@ -167,6 +254,8 @@ function startTurn(io, room) {
   room.pendingDiceOptions = [];
   room.captureDiceOptions = [];
   room.rolledDice = [];
+  room.rolledDiceIds = [];
+  room.usedDiceIds = [];
   room.captureBonusSixes = 0;
   room.validMoves = [];
   room.bonusTurn = false;
@@ -219,11 +308,13 @@ function forfeitTurnAfterThreeSixes(io, room, color) {
 
 function doRoll(io, room) {
   const color = room.game.turn;
-  const first = engine.rollDice();
+  const first = rollDiceForCurrentPlayer(room);
   room.rollId = (room.rollId || 0) + 1;
   room.dieRollId = (room.dieRollId || 0) + 1;
   room.dice = first;
   room.rolledDice = [first];
+  room.rolledDiceIds = [0];
+  room.usedDiceIds = [];
   room.bonusTurn = false;
   room.diceOptions = [];
   room.validMoves = [];
@@ -249,9 +340,11 @@ function doRoll(io, room) {
 function rollBonusDie(io, room) {
   if (room.phase !== 'bonus-roll') return;
   clearTimeout(room.timer);
-  const second = engine.rollDice();
+  const second = rollDiceForCurrentPlayer(room);
   const color = room.game.turn;
   room.dice = second;
+  room.rolledDiceIds = room.rolledDiceIds || room.rolledDice.map((_, index) => index);
+  room.rolledDiceIds.push(room.rolledDice.length);
   room.rolledDice.push(second);
   room.dieRollId = (room.dieRollId || 0) + 1;
   room.pendingDiceOptions = room.rolledDice.map((value, id) => ({
@@ -331,11 +424,13 @@ function doMove(io, room, tokenIdx, diceId) {
     color,
     tokenIdx,
     dice,
+    diceId,
     captured: result.captured.map((token) => ({
       ...token,
       pos: previousTokens[token.color][token.tokenIdx],
     })),
   };
+  room.usedDiceIds = [...(room.usedDiceIds || []), diceId];
 
   room.bonusTurn = room.bonusTurn
     || result.captured.length > 0
@@ -419,9 +514,13 @@ function forfeitGame(io, room, seat, socket) {
 function rollCaptureBonusDie(io, room) {
   if (room.phase !== 'capture-roll') return;
   clearTimeout(room.timer);
-  const value = engine.rollDice();
+  const value = rollDiceForCurrentPlayer(room);
   const color = room.game.turn;
+  const diceId = `capture-${(room.rollId || 0) + 1}`;
+  room.rolledDiceIds = room.rolledDiceIds || room.rolledDice.map((_, index) => index);
+  room.rolledDice.push(value);
   room.rollId = (room.rollId || 0) + 1;
+  room.rolledDiceIds.push(diceId);
   room.dieRollId = (room.dieRollId || 0) + 1;
   room.dice = value;
   room.diceOptions = [];
@@ -429,7 +528,7 @@ function rollCaptureBonusDie(io, room) {
   room.pendingDiceOptions = [
     ...(room.captureDiceOptions || []),
     {
-      id: `capture-${room.rollId}`,
+      id: diceId,
       value,
       moves: engine.getValidMoves(room.game, color, value),
     },
@@ -522,7 +621,7 @@ function createRoom(io, players, { tokensToWin = 4 } = {}) {
     id, mode, seats,
     game: engine.createGame(colors, { tokensToWin }),
     phase: 'roll', dice: null, diceOptions: [], pendingDiceOptions: [], captureDiceOptions: [], dieRollId: 0,
-    rolledDice: [], rollId: 0, validMoves: [], lastMove: null,
+    rolledDice: [], rolledDiceIds: [], usedDiceIds: [], rollId: 0, validMoves: [], lastMove: null,
     bonusTurn: false, doubleRoll: false, captureBonusSixes: 0,
     timer: null, deadline: null, emptyTimer: null,
   };
@@ -599,6 +698,26 @@ function replaceWithBot(io, socket) {
 
   clearTimeout(room.emptyTimer);
   room.emptyTimer = null;
+  if (room.game.turn === seat.color && ['roll', 'bonus-roll', 'capture-roll', 'move'].includes(room.phase)) {
+    schedule(io, room);
+  }
+  broadcast(io, room);
+  return true;
+}
+
+function takeOverDisconnectedSeat(io, room, socket) {
+  const seat = room.seats.find((candidate) => candidate.socketId === socket.id);
+  if (!seat) return false;
+
+  seat.socketId = null;
+  seat.isBot = true;
+  seat.level = 'takeover';
+  seat.name = seat.baseName + ' (bot)';
+
+  if (!room.seats.some((candidate) => candidate.socketId)) {
+    clearTimeout(room.emptyTimer);
+    room.emptyTimer = null;
+  }
   if (room.game.turn === seat.color && ['roll', 'bonus-roll', 'capture-roll', 'move'].includes(room.phase)) {
     schedule(io, room);
   }
@@ -746,7 +865,7 @@ function registerHandlers(io, socket) {
 
   // ----- Chat -----
 
-  socket.on('chat_message', ({ text } = {}) => {
+  if (GAME_CHAT_ENABLED) socket.on('chat_message', ({ text } = {}) => {
     const clean = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 200);
     if (!clean) return;
 
@@ -835,27 +954,11 @@ function registerHandlers(io, socket) {
     removeFromQueues(io, socket);
     const room = rooms.get(socket.data.roomId);
     if (!room) return;
-    const seat = room.seats.find((s) => s.socketId === socket.id);
-    if (!seat) return; // already taken over by a newer connection
-
-    seat.socketId = null;
-    seat.isBot = true; // a bot plays for them until they return
-    seat.level = 'takeover';
-    seat.name = seat.baseName + ' (bot)';
-
-    if (!room.seats.some((s) => s.socketId)) {
-      // Nobody is connected: keep the room for a while so players can come back
-      clearTimeout(room.emptyTimer);
-      room.emptyTimer = setTimeout(() => destroyRoom(io, room), RECONNECT_MS);
-      return;
-    }
-    if (room.game.turn === seat.color && ['roll', 'bonus-roll', 'capture-roll', 'move'].includes(room.phase)) {
-      schedule(io, room);
-    }
-    broadcast(io, room);
+    takeOverDisconnectedSeat(io, room, socket);
   });
 }
 
 module.exports = {
-  registerHandlers, autoAct, publicState, pickBotName, forfeitGame, BOT_NAMES,
+  registerHandlers, autoAct, publicState, pickBotName, forfeitGame,
+  rollDiceForCurrentPlayer, takeOverDisconnectedSeat, BOT_NAMES,
 };
