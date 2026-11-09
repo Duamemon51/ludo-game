@@ -359,6 +359,18 @@ function evaluateExpertReply(state, me) {
   return worstReply;
 }
 
+function evaluatePlanPosition(state, me, level) {
+  const positionValue = evaluate(state, me);
+  if (level === 'expert') return evaluateExpertReply(state, me);
+  if (level === 'hard') {
+    return positionValue * 0.35 + evaluateExpertReply(state, me) * 0.65;
+  }
+  if (level === 'medium') {
+    return positionValue * 0.65 + evaluateExpertReply(state, me) * 0.35;
+  }
+  return positionValue;
+}
+
 /* -------------------------------------------------- */
 /* Look-ahead search                                  */
 /* -------------------------------------------------- */
@@ -602,9 +614,7 @@ function chooseTurnMove(
     // No remaining usable dice.
     if (choices.length === 0) {
       if (firstMove) {
-        const positionValue = level === 'expert'
-          ? evaluateExpertReply(current, color)
-          : evaluate(current, color);
+        const positionValue = evaluatePlanPosition(current, color, level);
         saveCandidate(
           firstMove,
           positionValue + tacticalScore

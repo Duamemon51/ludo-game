@@ -2,15 +2,15 @@ const assert = require('assert');
 const engine = require('../game/engine');
 const {
   autoAct, publicState, pickBotName, forfeitGame, rollDiceForCurrentPlayer,
-  takeOverDisconnectedSeat, BOT_NAMES,
+  takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES,
 } = require('./rooms');
 
 const originalRandomForDiceTest = Math.random;
 try {
   for (const [level, sixThreshold] of [
-    ['expert', 0.799],
-    ['hard', 0.399],
-    ['medium', 0.299],
+    ['expert', 0.699],
+    ['hard', 0.499],
+    ['medium', 0.399],
   ]) {
     Math.random = () => sixThreshold;
     assert.strictEqual(rollDiceForCurrentPlayer({
@@ -24,6 +24,24 @@ try {
       seats: [{ color: 'red', isBot: true, level }],
     }), 5, `${level} bot should favor higher non-six rolls`);
   }
+
+  Math.random = () => 0.7;
+  assert.notStrictEqual(rollDiceForCurrentPlayer({
+    game: engine.createGame(['red', 'yellow']),
+    seats: [{ color: 'red', isBot: true, level: 'expert' }],
+  }), 6, 'expert six chance should be 70%, not 80%');
+
+  Math.random = () => 0.5;
+  assert.notStrictEqual(rollDiceForCurrentPlayer({
+    game: engine.createGame(['red', 'yellow']),
+    seats: [{ color: 'red', isBot: true, level: 'hard' }],
+  }), 6, 'hard six chance should be 50%, not 40%');
+
+  Math.random = () => 0.4;
+  assert.notStrictEqual(rollDiceForCurrentPlayer({
+    game: engine.createGame(['red', 'yellow']),
+    seats: [{ color: 'red', isBot: true, level: 'medium' }],
+  }), 6, 'medium six chance should be 40%, not 30%');
 
   Math.random = () => 0.15;
   assert.strictEqual(rollDiceForCurrentPlayer({
@@ -65,7 +83,7 @@ try {
       phase: 'roll',
       rolledDice: [],
     };
-    let randomValues = [cooldownRoll, cooldownRoll];
+    let randomValues = [0.2, cooldownRoll];
     Math.random = () => randomValues.shift() ?? 0;
     assert.strictEqual(rollDiceForCurrentPlayer(expertDiceRoom), 6);
     assert.strictEqual(expertSeat.sixCooldown, expectedCooldown);
@@ -73,18 +91,21 @@ try {
     expertDiceRoom.phase = 'bonus-roll';
     expertDiceRoom.rolledDice = [6];
     Math.random = () => 0;
+    assert.notStrictEqual(rollDiceForCurrentPlayer(expertDiceRoom), 6);
+    assert.strictEqual(expertSeat.sixCooldown, expectedCooldown, 'same-turn bonus rolls do not consume the gap');
+
+    expertDiceRoom.phase = 'roll';
+    expertDiceRoom.rolledDice = [];
     for (let remaining = expectedCooldown; remaining > 0; remaining--) {
       assert.notStrictEqual(rollDiceForCurrentPlayer(expertDiceRoom), 6);
       assert.strictEqual(expertSeat.sixCooldown, remaining - 1);
     }
 
-    expertDiceRoom.phase = 'roll';
-    expertDiceRoom.rolledDice = [];
     randomValues = [0.2, 0.2];
     Math.random = () => randomValues.shift() ?? 0;
     assert.strictEqual(rollDiceForCurrentPlayer(expertDiceRoom), 6);
   }
-  console.log('PASS: expert bot randomly spaces sixes by one or two rolls');
+  console.log('PASS: expert bot randomly spaces sixes by one or two turns');
 
   const captureGame = engine.createGame(['red', 'yellow']);
   captureGame.captures.red = engine.CAPTURES_TO_UNLOCK_HOME;
@@ -151,6 +172,27 @@ assert.deepStrictEqual(opponentView.seats[0], {
   color: 'red', name: 'Player', isBot: false, isTakeover: false,
 });
 console.log('PASS: takeover status is visible only to the affected player');
+
+const takeoverNoticeSeat = {
+  color: 'red',
+  baseName: 'Player',
+  name: 'Player (bot)',
+  isBot: true,
+  level: 'takeover',
+  missed: 1,
+};
+const takeoverNotices = [];
+restoreSeatControl(takeoverNoticeSeat, {
+  emit: (event, payload) => takeoverNotices.push({ event, payload }),
+});
+assert.strictEqual(takeoverNoticeSeat.name, 'Player');
+assert.strictEqual(takeoverNoticeSeat.isBot, false);
+assert.strictEqual(takeoverNoticeSeat.level, 'medium');
+assert.strictEqual(takeoverNoticeSeat.missed, 0);
+assert.ok(takeoverNotices.some(({ event, payload }) =>
+  event === 'notice' && payload.title === 'Control restored'
+));
+console.log('PASS: player gets a control-restored popup after reclaiming a takeover seat');
 
 const disconnectedRoom = {
   id: 'disconnect-takeover-test',

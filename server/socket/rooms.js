@@ -13,9 +13,9 @@ const MAX_MISSED = 1;
 const RECONNECT_MS = 60000; // how long an empty room waits for players to come back
 const GAME_CHAT_ENABLED = false;
 const BOT_SIX_CHANCE = {
-  expert: 0.8,
-  hard: 0.4,
-  medium: 0.3,
+  expert: 0.7,
+  hard: 0.5,
+  medium: 0.4,
 };
 
 const BOT_NAMES = [
@@ -125,9 +125,11 @@ function rollDiceForCurrentPlayer(room) {
     : 0;
   const finishBotRoll = (value) => {
     if (seat.level === 'expert') {
-      seat.sixCooldown = value === 6
-        ? (Math.random() < 0.5 ? 1 : 2)
-        : Math.max(0, expertSixCooldown - 1);
+      if (value === 6) {
+        seat.sixCooldown = Math.random() < 0.5 ? 1 : 2;
+      } else if (room.phase === 'roll' && expertSixCooldown > 0) {
+        seat.sixCooldown = expertSixCooldown - 1;
+      }
     }
     return value;
   };
@@ -741,6 +743,22 @@ function takeOverDisconnectedSeat(io, room, socket) {
   return true;
 }
 
+function restoreSeatControl(seat, socket) {
+  const wasTakenOver = seat.isBot && seat.level === 'takeover';
+  seat.isBot = false;
+  seat.level = 'medium';
+  seat.missed = 0;
+  seat.name = seat.baseName;
+
+  if (wasTakenOver) {
+    socket.emit('notice', {
+      title: 'Control restored',
+      message: 'You are back in control. A bot handled your seat while you were away.',
+      type: 'success',
+    });
+  }
+}
+
 // ---------- Reconnect ----------
 
 function resumeGame(io, socket) {
@@ -767,32 +785,14 @@ function resumeGame(io, socket) {
   clearTimeout(room.emptyTimer);
   room.emptyTimer = null;
 
-  const wasTakenOver = seat.isBot && seat.level === 'takeover';
   seat.socketId = socket.id;
-  seat.isBot = false;
-  seat.level = 'medium';
-  seat.missed = 0;
-  seat.name = seat.baseName;
+  restoreSeatControl(seat, socket);
 
   socket.join(room.id);
   socket.data.roomId = room.id;
   socket.data.color = seat.color;
 
   socket.emit('match_found', { roomId: room.id, yourColor: seat.color });
-  if (wasTakenOver) {
-    socket.emit('notice', {
-      title: 'Control restored',
-      message: 'You are back in control. A bot handled your seat while you were disconnected.',
-      type: 'success',
-    });
-  } else {
-    io.to(room.id).emit('notice', {
-      title: 'Player reconnected',
-      message: `${seat.baseName} has rejoined.`,
-      type: 'success',
-    });
-  }
-
   // If it is their turn, give them a human timer again instead of the bot's
   if (room.game.turn === seat.color && ['roll', 'bonus-roll', 'capture-roll', 'move'].includes(room.phase)) {
     schedule(io, room);
@@ -924,9 +924,7 @@ function registerHandlers(io, socket) {
     if (!room || room.phase !== 'roll') return;
     const seat = seatOf(room, socket.data.color);
     if (!seat || seat.socketId !== socket.id || room.game.turn !== seat.color) return;
-    seat.isBot = false;
-    seat.level = 'medium';
-    seat.missed = 0;
+    restoreSeatControl(seat, socket);
     doRoll(io, room);
   });
 
@@ -935,9 +933,7 @@ function registerHandlers(io, socket) {
     if (!room || room.phase !== 'bonus-roll') return;
     const seat = seatOf(room, socket.data.color);
     if (!seat || seat.socketId !== socket.id || room.game.turn !== seat.color) return;
-    seat.isBot = false;
-    seat.level = 'medium';
-    seat.missed = 0;
+    restoreSeatControl(seat, socket);
     rollBonusDie(io, room);
   });
 
@@ -946,9 +942,7 @@ function registerHandlers(io, socket) {
     if (!room || room.phase !== 'capture-roll') return;
     const seat = seatOf(room, socket.data.color);
     if (!seat || seat.socketId !== socket.id || room.game.turn !== seat.color) return;
-    seat.isBot = false;
-    seat.level = 'medium';
-    seat.missed = 0;
+    restoreSeatControl(seat, socket);
     rollCaptureBonusDie(io, room);
   });
 
@@ -959,9 +953,7 @@ function registerHandlers(io, socket) {
     if (!seat || seat.socketId !== socket.id || room.game.turn !== seat.color) return;
     const option = room.diceOptions.find((candidate) => candidate.id === diceId);
     if (!Number.isInteger(tokenIdx) || !option || !option.moves.includes(tokenIdx)) return;
-    seat.isBot = false;
-    seat.level = 'medium';
-    seat.missed = 0;
+    restoreSeatControl(seat, socket);
     doMove(io, room, tokenIdx, diceId);
   });
 
@@ -976,5 +968,5 @@ function registerHandlers(io, socket) {
 
 module.exports = {
   registerHandlers, autoAct, publicState, pickBotName, forfeitGame,
-  rollDiceForCurrentPlayer, takeOverDisconnectedSeat, BOT_NAMES,
+  rollDiceForCurrentPlayer, takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES,
 };
