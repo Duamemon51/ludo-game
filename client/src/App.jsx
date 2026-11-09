@@ -99,7 +99,6 @@ export default function App() {
     () => window.matchMedia(MOBILE_LAYOUT_QUERY).matches
   );
   const [connected, setConnected] = useState(socket.connected);
-  const [connectionError, setConnectionError] = useState('');
   const [status, setStatus] = useState('idle'); // idle | queued | lobby | playing | finishing | over
   const [authSession, setAuthSession] = useState(readAuthSession);
   const [loginLoading, setLoginLoading] = useState(false);
@@ -235,7 +234,6 @@ export default function App() {
   };
 
   const retryConnection = () => {
-    setConnectionError('');
     if (socket.connected) socket.emit('resume_game');
     else socket.connect();
   };
@@ -243,14 +241,11 @@ export default function App() {
   useEffect(() => {
     const onConnect = () => {
       setConnected(true);
-      setConnectionError('');
       socket.emit('resume_game'); // ask the server to put us back in our game, if any
     };
-    const onDisconnect = (reason) => {
+    const onDisconnect = () => {
       setConnected(false); // keep the board on screen while reconnecting
-      setConnectionError(reason);
     };
-    const onConnectError = (error) => setConnectionError(error.message);
     const onOffline = () => setConnected(socket.connected);
     const onOnline = () => {
       setConnected(socket.connected);
@@ -331,7 +326,6 @@ export default function App() {
 
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
-    socket.on('connect_error', onConnectError);
     window.addEventListener('offline', onOffline);
     window.addEventListener('online', onOnline);
     window.addEventListener('focus', onPageVisible);
@@ -350,7 +344,6 @@ export default function App() {
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
-      socket.off('connect_error', onConnectError);
       window.removeEventListener('offline', onOffline);
       window.removeEventListener('online', onOnline);
       window.removeEventListener('focus', onPageVisible);
@@ -602,10 +595,7 @@ export default function App() {
       {!connected && !inGame && homeView !== 'master' && homeView !== 'login' && homeView !== 'menu' && <div className="card">Connecting to server...</div>}
       {!connected && inGame && (
         <div className="reconnect-banner" role="status">
-          <span>
-            Connection lost. Reconnecting...
-            {connectionError && <small className="reconnect-error">{connectionError}</small>}
-          </span>
+          <span>Connection lost. Reconnecting...</span>
           <button type="button" onClick={retryConnection}>Retry</button>
         </div>
       )}
