@@ -98,6 +98,7 @@ export default function Board({
   const [kill, setKill] = useState(null);
   const [announce, setAnnounce] = useState(null);
   const [pendingCapture, setPendingCapture] = useState(null);
+  const [captureIndex, setCaptureIndex] = useState(0);
   const [choiceTokenId, setChoiceTokenId] = useState(null);
   const [homeFx, setHomeFx] = useState([]);
   const previousTokens = useRef(tokens);
@@ -269,7 +270,7 @@ export default function Board({
 
   }, [tokens, captures, lastMove]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (lastMove?.id != null && lastMove.id !== lastMoveId.current) {
       lastMoveId.current = lastMove.id;
       const captures = lastMove.captured || [];
@@ -315,6 +316,7 @@ export default function Board({
             captures: captureItems,
             moveDuration: (movePositions.length - 1) * MOVE_STEP_MS,
           });
+          setCaptureIndex(0);
         }
       }
     }
@@ -337,10 +339,12 @@ export default function Board({
         setKill(null);
         setAnnounce(null);
         setPendingCapture(null);
+        setCaptureIndex(0);
         captureRun.current = null;
         return;
       }
 
+      setCaptureIndex(index);
       setAnnounce({ x: captured.x, y: captured.y, sequence: captured.sequence });
       killTimer.current = setTimeout(() => {
         setKill({
@@ -354,7 +358,10 @@ export default function Board({
           by: `${pendingCapture.killerColor}-${pendingCapture.killerTokenIdx}`,
           sequence: captured.sequence,
         });
-        killTimer.current = setTimeout(() => showCapture(index + 1), 850);
+        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const isMobile = window.matchMedia('(max-width: 600px)').matches;
+        const animationDuration = prefersReducedMotion ? 450 : isMobile ? 480 : 750;
+        killTimer.current = setTimeout(() => showCapture(index + 1), animationDuration);
       }, 220);
     };
 
@@ -410,7 +417,11 @@ export default function Board({
         const canMove = t.color === myColor && movable.includes(t.idx) && settled && !pendingCapture;
         const r = RADIUS * t.scale;
         const id = `${t.color}-${t.idx}`;
-        const isCaptured = kill?.id === id;
+        const activeCapture = pendingCapture?.captures[captureIndex];
+        const heldCapture = pendingCapture?.captures.find(
+          (captured, index) => index >= captureIndex && captured.id === id
+        );
+        const isCaptured = activeCapture?.id === id && kill?.id === id;
         const isKiller = kill?.by === id;
         const isHoming = homeFx.some((fx) => fx.id === id);
         const isWinner = celebrateWinner === t.color && tokens[t.color][t.idx] === 57;
@@ -424,7 +435,7 @@ export default function Board({
             }}
             className={`token${canMove ? ' movable' : ''}${isCaptured ? ' captured' : ''}${isKiller ? ' killer' : ''}${isHoming ? ' homing' : ''}${isWinner ? ' winner-token' : ''}`}
             style={{
-              transform: `translate(${isCaptured ? kill.x : t.x}px, ${isCaptured ? kill.y : t.y}px)`,
+              transform: `translate(${isCaptured ? kill.x : heldCapture ? heldCapture.x : t.x}px, ${isCaptured ? kill.y : heldCapture ? heldCapture.y : t.y}px)`,
               ...(isCaptured && {
                 '--home-dx': `${kill.homeDx}px`,
                 '--home-dy': `${kill.homeDy}px`,
@@ -503,8 +514,8 @@ export default function Board({
         <>
           <circle className="kill-burst red" cx={kill.x} cy={kill.y} r="0.45" />
           <circle className="kill-burst b2" cx={kill.x} cy={kill.y} r="0.45" />
-          {Array.from({ length: 14 }, (_, i) => {
-            const angle = (i / 14) * Math.PI * 2;
+          {Array.from({ length: 10 }, (_, i) => {
+            const angle = (i / 10) * Math.PI * 2;
             const distance = 0.65 + (i % 3) * 0.24;
             const colors = ['#ef4444', '#b91c1c', '#f97316', '#fbbf24', '#fff'];
             return (

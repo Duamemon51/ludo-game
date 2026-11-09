@@ -831,8 +831,7 @@ button { touch-action: manipulation; font-family: inherit; }
 .kill-particle {
   transform-box: fill-box;
   transform-origin: center;
-  filter: drop-shadow(0 0 2px #ef4444);
-  animation: killParticle 0.55s cubic-bezier(.15, .7, .3, 1) both;
+  animation: killParticle 0.4s cubic-bezier(.15, .7, .3, 1) both;
   pointer-events: none;
 }
 @keyframes killParticle {
@@ -949,11 +948,11 @@ button { touch-action: manipulation; font-family: inherit; }
 }
 
 @media (max-width: 600px) {
-  .token.captured { animation: mobileKillFly 0.65s ease-out forwards; }
+  .token.captured { animation: mobileKillFly 0.48s ease-out forwards; }
   .token.killer, .token.winner-token { filter: none; }
   .token.killer { animation: mobileKillerPop 0.42s ease-out; }
   .token.winner-token { animation: mobileWinnerPop 1.15s ease-out both; }
-  .kill-burst, .winner-burst circle, .winner-burst line { filter: none; }
+  .kill-burst, .kill-particle, .winner-burst circle, .winner-burst line { filter: none; }
   .winner-burst circle { stroke-width: .28; animation: mobileVictoryRing 1.1s cubic-bezier(.15, .75, .3, 1) both; }
   .winner-burst circle + circle { animation-delay: .14s; }
   .winner-burst line { stroke-width: .2; animation: mobileVictoryRay .8s ease-out both; }
