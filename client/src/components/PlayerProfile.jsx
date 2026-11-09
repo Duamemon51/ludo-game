@@ -1,6 +1,6 @@
 import { COLORS } from '../ludoLayout';
 
-export default function PlayerProfile({ seat, isMe, pct, onChat, avatar }) {
+export default function PlayerProfile({ seat, isMe, pct, onChat, chatEnabled, avatar }) {
   const initial = (seat.name || '?').trim().charAt(0).toUpperCase();
   const showAvatar = Boolean(avatar && (isMe || seat.isTakeover));
 
@@ -10,9 +10,9 @@ export default function PlayerProfile({ seat, isMe, pct, onChat, avatar }) {
         type="button"
         className={'avatar-ring' + (isMe ? ' me' : '')}
         style={{ '--c': COLORS[seat.color], '--pct': `${pct}%` }}
-        disabled={!isMe}
+        disabled={!isMe || !chatEnabled}
         onClick={onChat}
-        aria-label={isMe ? 'Open chat' : seat.name}
+        aria-label={isMe && chatEnabled ? 'Open chat' : seat.name}
       >
         {showAvatar ? (
           <img className="avatar avatar-photo" src={avatar} alt="" />
@@ -32,7 +32,7 @@ export default function PlayerProfile({ seat, isMe, pct, onChat, avatar }) {
             style={{ strokeDashoffset: `${100 - pct}` }}
           />
         </svg>
-        {isMe && <span className="chat-badge">💬</span>}
+        {chatEnabled && isMe && <span className="chat-badge">💬</span>}
       </button>
 
       <div className={`pname${isMe ? ' player-name-you' : ''}`} title={isMe ? undefined : seat.name}>

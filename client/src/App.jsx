@@ -13,6 +13,7 @@ import GameTopBar from './components/GameTopBar';
 import { signIn } from './authApi';
 
 const AUTO_MOVE_SINGLE = true; // auto-play when only one token can move
+const GAME_CHAT_ENABLED = false;
 const TURN_SECONDS = 20;
 const BUBBLE_MS = 4500;
 const RESULT_REVEAL_MS = 2600;
@@ -312,7 +313,7 @@ export default function App() {
     socket.on('game_update', onUpdate);
     socket.on('notice', showNotice);
     socket.on('game_over', onOver);
-    socket.on('chat_message', onChat);
+    if (GAME_CHAT_ENABLED) socket.on('chat_message', onChat);
     if (socket.connected && navigator.onLine) socket.emit('resume_game'); // page was refreshed while already connected
 
     return () => {
@@ -328,7 +329,7 @@ export default function App() {
       socket.off('game_update', onUpdate);
       socket.off('notice', showNotice);
       socket.off('game_over', onOver);
-      socket.off('chat_message', onChat);
+      if (GAME_CHAT_ENABLED) socket.off('chat_message', onChat);
       clearTimeout(resultTimerRef.current);
       clearTimeout(noticeTimerRef.current);
     };
@@ -497,6 +498,9 @@ export default function App() {
         pct={pct}
         dice={game.dice}
         diceRollId={game.dieRollId}
+        rolledDice={game.rolledDice || []}
+        rolledDiceIds={game.rolledDiceIds}
+        usedDiceIds={game.usedDiceIds || []}
         canRoll={canRoll}
         onRoll={() => socket.emit(
           game.phase === 'bonus-roll'
@@ -507,6 +511,7 @@ export default function App() {
         )}
         soundMuted={soundMuted}
         onChat={() => setChatOpen(true)}
+        chatEnabled={GAME_CHAT_ENABLED}
         bubble={bubbles[color]}
         avatar={color === myColor ? playerAvatar : ''}
       />
@@ -617,23 +622,25 @@ export default function App() {
                     type="button"
                     className={'avatar-ring' + (isMe ? ' me' : '')}
                     style={{ '--c': '#6366f1', '--pct': '100%' }}
-                    disabled={!isMe}
-                    onClick={() => setChatOpen(true)}
+                    disabled={!isMe || !GAME_CHAT_ENABLED}
+                    onClick={() => GAME_CHAT_ENABLED && setChatOpen(true)}
                   >
                     <span className="avatar">{p.name.charAt(0).toUpperCase()}</span>
-                    {isMe && <span className="chat-badge">💬</span>}
+                    {GAME_CHAT_ENABLED && isMe && <span className="chat-badge">💬</span>}
                   </button>
                   <div className="pname dark">
                     {p.name}
                     {p.id === lobby.hostId ? ' 👑' : ''}
                     {isMe ? ' (you)' : ''}
                   </div>
-                  {b && <Bubble key={b.id} text={b.text} vertical="bottom" side="center" />}
+                  {GAME_CHAT_ENABLED && b && (
+                    <Bubble key={b.id} text={b.text} vertical="bottom" side="center" />
+                  )}
                 </div>
               );
             })}
           </div>
-          <p className="hint">Tap your avatar to chat 💬</p>
+          {GAME_CHAT_ENABLED && <p className="hint">Tap your avatar to chat 💬</p>}
 
           {isHost ? (
             <button className="btn" onClick={() => socket.emit('start_room')}>
@@ -736,11 +743,13 @@ export default function App() {
         </div>
       )}
 
-      <ChatSheet
-        open={chatOpen && (status === 'lobby' || status === 'playing')}
-        onClose={() => setChatOpen(false)}
-        onSend={sendChat}
-      />
+      {GAME_CHAT_ENABLED && (
+        <ChatSheet
+          open={chatOpen && (status === 'lobby' || status === 'playing')}
+          onClose={() => setChatOpen(false)}
+          onSend={sendChat}
+        />
+      )}
     </div>
   );
 }

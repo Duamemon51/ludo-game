@@ -186,6 +186,7 @@ button { touch-action: manipulation; font-family: inherit; }
   box-shadow: none;
 }
 .panel.right { align-items: flex-end; text-align: right; }
+.game > .prow-bottom { margin-top: 14px; }
 .pmain { display: flex; align-items: center; gap: 22px; min-height: 60px; }
 .panel.right .pmain { flex-direction: row-reverse; }
 .player-profile {

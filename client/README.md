@@ -17,7 +17,14 @@ Copy-Item .env.example .env
 npm run dev
 ```
 
-The local `.env` should point `VITE_SERVER_URL` to `http://localhost:3001`.
+By default, the client connects to port 3001 on the same host used to open the
+page. Leave `VITE_SERVER_URL` unset for local and same-Wi-Fi phone testing.
+
+To test on a phone, connect it to the same Wi-Fi as the development computer,
+start both the server and client, then open `http://<computer-LAN-IP>:5173` on
+the phone (for example, `http://192.168.1.5:5173`). Allow inbound connections
+to ports 5173 and 3001 through the computer's firewall if prompted. The phone
+will connect to the game server on the same LAN IP and port 3001.
 
 ## Deployment
 

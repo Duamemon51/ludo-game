@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { masterRequest } from '../masterApi';
+import DashboardHeader from './DashboardHeader';
+import DashboardSidebar from './DashboardSidebar';
 
 const pages = [
-  ['Dashboard', 'DB'],
-  ['Users', 'US'],
-  ['User requests', 'UR'],
-  ['My wallet', 'WL'],
-  ['Matches', 'GM'],
+  ['Dashboard', 'dashboard'],
+  ['Users', 'users'],
+  ['User requests', 'requests'],
+  ['My wallet', 'wallet'],
+  ['Matches', 'matches'],
 ];
 const formatAmount = (value) => `${Number(value || 0).toLocaleString()} credits`;
 const initials = (name = '') => name.split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join('').toUpperCase();
@@ -25,6 +27,9 @@ async function loadMasterData(token) {
 
 function MasterDashboard({ token, onBack }) {
   const [activePage, setActivePage] = useState('Dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+  const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
   const [master, setMaster] = useState(null);
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
@@ -258,18 +263,39 @@ function MasterDashboard({ token, onBack }) {
         @media(max-width:1100px){.md-stats-five{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:900px){.md-sidebar{width:210px;flex-basis:210px}.md-content{padding:25px 20px 34px}.md-topbar{padding-right:20px;padding-left:20px}}@media(max-width:680px){.master-dashboard{flex-direction:column}.md-sidebar{width:100%;flex:none;padding:11px 13px}.md-brand{padding:0 3px 10px}.md-brand-mark{width:31px;height:31px}.md-master-card,.md-nav-label,.md-sidebar-bottom{display:none}.md-nav{display:flex;overflow-x:auto;gap:5px}.md-nav button{width:auto;min-height:37px;gap:7px;padding:0 9px;font-size:10px}.md-nav-icon{width:22px;height:22px}.md-topbar{min-height:54px;padding:0 13px}.md-content{padding:20px 12px 28px}.md-heading{align-items:flex-start}.md-stats,.md-stats-five{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.md-stat{padding:12px}.md-stat strong{font-size:16px}}@media(max-width:420px){.md-content{padding-right:9px;padding-left:9px}.md-table th,.md-table td{padding-right:10px;padding-left:10px}}
       `}</style>
 
-      <aside className="md-sidebar">
-        <div className="md-brand"><div className="md-brand-mark">L</div><div><div className="md-brand-name">LUDO</div><div className="md-brand-caption">MASTER PANEL</div></div></div>
-        <div className="md-master-card"><strong>{master?.name || 'Master'}</strong><span>{master?.loginId || ''}</span></div>
-        <div className="md-nav-label">Management</div>
-        <nav className="md-nav" aria-label="Master panel">
-          {pages.map(([label, icon]) => <button key={label} type="button" className={activePage === label ? 'selected' : ''} aria-current={activePage === label ? 'page' : undefined} onClick={() => { setActivePage(label); setSelectedUserId(''); setNotice(''); }}><span className="md-nav-icon" aria-hidden="true">{icon}</span>{label}{label === 'User requests' && pendingUserRequests.length > 0 && <span>{pendingUserRequests.length}</span>}</button>)}
-        </nav>
-        <div className="md-sidebar-bottom"><button type="button" className="md-back" onClick={onBack}>Sign out</button></div>
-      </aside>
+      <DashboardSidebar
+        variant="master"
+        open={sidebarOpen}
+        onClose={closeSidebar}
+        brandSubtitle="MASTER PANEL"
+        sectionLabel="Management"
+        ariaLabel="Master panel"
+        activeItem={activePage}
+        navItems={pages.map(([label, icon]) => ({
+          label,
+          icon,
+          count: label === 'User requests' ? pendingUserRequests.length : 0,
+        }))}
+        onNavigate={(label) => {
+          setActivePage(label);
+          setSelectedUserId('');
+          setNotice('');
+        }}
+        accountName={master?.name}
+        accountLoginId={master?.loginId}
+        onSignOut={onBack}
+      />
 
       <section className="md-main">
-        <header className="md-topbar"><div className="md-crumb">Master panel <span aria-hidden="true">/</span> <strong>{activePage}</strong></div><div className="md-top-actions"><button type="button" className="md-back-top" onClick={onBack}>Sign out</button><div className="md-avatar" aria-label="Master account">{initials(master?.name)}</div></div></header>
+        <DashboardHeader
+          variant="master"
+          breadcrumb={<>Master panel <span aria-hidden="true">/</span> <strong>{activePage}</strong></>}
+          avatarText={initials(master?.name)}
+          avatarLabel="Master account"
+          onSignOut={onBack}
+          menuOpen={sidebarOpen}
+          onMenuToggle={toggleSidebar}
+        />
         <div className="md-content">
           {notice && <div className="md-notice" role="status">{notice}</div>}
           {loadError && <div className="md-error-banner" role="alert">{loadError} <button type="button" className="md-action" onClick={refreshData}>Retry</button></div>}
