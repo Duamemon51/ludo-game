@@ -3,6 +3,7 @@ const {
   BASE,
   LAST_TRACK,
   FINISH,
+  CAPTURES_TO_UNLOCK_HOME,
   toAbs,
   getMoveDestination,
   getValidMoves,
@@ -265,6 +266,44 @@ function tokenValue(pos) {
   }
 
   return pos + 8 + pos * pos * 0.02;
+}
+
+function captureSetupValue(state, color, rel) {
+  if (
+    state.captures[color] >= CAPTURES_TO_UNLOCK_HOME ||
+    rel < 0 ||
+    rel > LAST_TRACK
+  ) {
+    return 0;
+  }
+
+  const abs = toAbs(color, rel);
+  let value = 0;
+
+  for (const other of state.colors) {
+    if (other === color) continue;
+
+    for (const pos of state.tokens[other]) {
+      if (pos < 0 || pos > LAST_TRACK) continue;
+
+      const target = toAbs(other, pos);
+      if (SAFE.includes(target)) continue;
+
+      const distance = (target - abs + 52) % 52;
+      if (distance >= 1 && distance <= 6) {
+        value += 45 + Math.min(tokenValue(pos) * 0.2, 30) + (7 - distance) * 6;
+      }
+    }
+  }
+
+  return value;
+}
+
+function captureSetupScore(state, color) {
+  return state.tokens[color].reduce(
+    (total, pos) => total + captureSetupValue(state, color, pos),
+    0
+  );
 }
 
 function sideScore(state, color) {
@@ -564,6 +603,12 @@ function chooseTurnMove(
     id,
     value,
   }));
+  const canCaptureThisTurn = options.some(({ value }) =>
+    getValidMoves(state, color, value).some((tokenIdx) => {
+      const next = cloneState(state);
+      return applyMove(next, color, tokenIdx, value).captured.length > 0;
+    })
+  );
 
   // Keep the best complete-turn plan for each possible first move.
   const candidateMap = new Map();
@@ -615,9 +660,12 @@ function chooseTurnMove(
     if (choices.length === 0) {
       if (firstMove) {
         const positionValue = evaluatePlanPosition(current, color, level);
+        const captureSetup = level === 'expert' && !canCaptureThisTurn
+          ? captureSetupScore(current, color)
+          : 0;
         saveCandidate(
           firstMove,
-          positionValue + tacticalScore
+          positionValue + captureSetup + tacticalScore
         );
       }
 

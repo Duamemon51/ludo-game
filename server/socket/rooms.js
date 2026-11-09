@@ -919,6 +919,18 @@ function registerHandlers(io, socket) {
 
   // ----- Gameplay -----
 
+  socket.on('disable_auto_mode', () => {
+    const room = rooms.get(socket.data.roomId);
+    const seat = room && room.seats.find((candidate) => candidate.socketId === socket.id);
+    if (!room || !seat || !seat.isBot || seat.level !== 'takeover') return;
+
+    restoreSeatControl(seat, socket);
+    if (room.game.turn === seat.color && ['roll', 'bonus-roll', 'capture-roll', 'move'].includes(room.phase)) {
+      schedule(io, room);
+    }
+    broadcast(io, room);
+  });
+
   socket.on('roll_dice', () => {
     const room = rooms.get(socket.data.roomId);
     if (!room || room.phase !== 'roll') return;
