@@ -1,6 +1,6 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator, rateLimit } = require('express-rate-limit');
 const { randomUUID } = require('node:crypto');
 const { pool } = require('../db/pool');
 
@@ -17,6 +17,12 @@ class HttpError extends Error {
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 5,
+  keyGenerator: (req) => {
+    const loginId = typeof req.body?.loginId === 'string'
+      ? req.body.loginId.trim().toLowerCase()
+      : '';
+    return JSON.stringify([ipKeyGenerator(req.ip), loginId]);
+  },
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   skipSuccessfulRequests: true,
