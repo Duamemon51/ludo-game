@@ -98,7 +98,8 @@ export default function App() {
   const [isMobileLayout, setIsMobileLayout] = useState(
     () => window.matchMedia(MOBILE_LAYOUT_QUERY).matches
   );
-  const [connected, setConnected] = useState(socket.connected && navigator.onLine);
+  const [connected, setConnected] = useState(socket.connected);
+  const [connectionError, setConnectionError] = useState('');
   const [status, setStatus] = useState('idle'); // idle | queued | lobby | playing | finishing | over
   const [authSession, setAuthSession] = useState(readAuthSession);
   const [loginLoading, setLoginLoading] = useState(false);
@@ -225,16 +226,39 @@ export default function App() {
     window.history.replaceState(null, '', '/');
   };
 
+  const toggleSound = () => {
+    setSoundMuted((muted) => {
+      const nextMuted = !muted;
+      localStorage.setItem('ludo-sound-muted', String(nextMuted));
+      return nextMuted;
+    });
+  };
+
+  const retryConnection = () => {
+    setConnectionError('');
+    if (socket.connected) socket.emit('resume_game');
+    else socket.connect();
+  };
+
   useEffect(() => {
     const onConnect = () => {
-      setConnected(navigator.onLine);
-      if (navigator.onLine) socket.emit('resume_game'); // ask the server to put us back in our game, if any
+      setConnected(true);
+      setConnectionError('');
+      socket.emit('resume_game'); // ask the server to put us back in our game, if any
     };
-    const onDisconnect = () => setConnected(false); // keep the board on screen while reconnecting
-    const onOffline = () => setConnected(false);
+    const onDisconnect = (reason) => {
+      setConnected(false); // keep the board on screen while reconnecting
+      setConnectionError(reason);
+    };
+    const onConnectError = (error) => setConnectionError(error.message);
+    const onOffline = () => setConnected(socket.connected);
     const onOnline = () => {
       setConnected(socket.connected);
-      if (socket.connected) socket.emit('resume_game');
+      if (!socket.connected) socket.connect();
+    };
+    const onPageVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (!socket.connected) socket.connect();
     };
     const onNoGame = () => {
       if (statusRef.current === 'over' || statusRef.current === 'finishing') return;
@@ -266,6 +290,7 @@ export default function App() {
         socket.emit('cancel_match', { requestId });
         return;
       }
+      setConnected(true);
       matchmakingRequestRef.current = null;
       cancelledMatchmakingRef.current = false;
       clearTimeout(resultTimerRef.current);
@@ -276,11 +301,14 @@ export default function App() {
       setBubbles({});
       setStatus('playing');
     };
-    const onUpdate = (state) =>
+    const onUpdate = (state) => {
+      setConnected(true);
+      setConnectionError('');
       setGame({
         ...state,
         localDeadline: state.timeLeftMs != null ? Date.now() + state.timeLeftMs : null,
       });
+    };
     const onOver = () => {
       clearTimeout(resultTimerRef.current);
       setStatus('finishing');
@@ -303,8 +331,11 @@ export default function App() {
 
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
+    socket.on('connect_error', onConnectError);
     window.addEventListener('offline', onOffline);
     window.addEventListener('online', onOnline);
+    window.addEventListener('focus', onPageVisible);
+    document.addEventListener('visibilitychange', onPageVisible);
     socket.on('no_game', onNoGame);
     socket.on('queued', onQueued);
     socket.on('lobby_update', onLobby);
@@ -314,13 +345,16 @@ export default function App() {
     socket.on('notice', showNotice);
     socket.on('game_over', onOver);
     if (GAME_CHAT_ENABLED) socket.on('chat_message', onChat);
-    if (socket.connected && navigator.onLine) socket.emit('resume_game'); // page was refreshed while already connected
+    if (socket.connected) socket.emit('resume_game'); // page was refreshed while already connected
 
     return () => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
+      socket.off('connect_error', onConnectError);
       window.removeEventListener('offline', onOffline);
       window.removeEventListener('online', onOnline);
+      window.removeEventListener('focus', onPageVisible);
+      document.removeEventListener('visibilitychange', onPageVisible);
       socket.off('no_game', onNoGame);
       socket.off('queued', onQueued);
       socket.off('lobby_update', onLobby);
@@ -566,7 +600,15 @@ export default function App() {
       )}
 
       {!connected && !inGame && homeView !== 'master' && homeView !== 'login' && homeView !== 'menu' && <div className="card">Connecting to server...</div>}
-      {!connected && inGame && <div className="reconnect-banner">Connection lost. Reconnecting...</div>}
+      {!connected && inGame && (
+        <div className="reconnect-banner" role="status">
+          <span>
+            Connection lost. Reconnecting...
+            {connectionError && <small className="reconnect-error">{connectionError}</small>}
+          </span>
+          <button type="button" onClick={retryConnection}>Retry</button>
+        </div>
+      )}
 
       {status === 'idle' && homeView === 'login' && (
         <LoginScreen
@@ -584,6 +626,8 @@ export default function App() {
           onFindMatch={findMatch}
           token={authSession.token}
           onSignOut={signOut}
+          soundMuted={soundMuted}
+          onToggleMute={toggleSound}
           connected={connected}
         />
       )}
@@ -660,13 +704,7 @@ export default function App() {
               onLeave={() => setLeaveOpen(true)}
               winAmount={matchWinAmount}
               soundMuted={soundMuted}
-              onToggleMute={() => {
-                setSoundMuted((muted) => {
-                  const nextMuted = !muted;
-                  localStorage.setItem('ludo-sound-muted', String(nextMuted));
-                  return nextMuted;
-                });
-              }}
+              onToggleMute={toggleSound}
             />
           )}
 

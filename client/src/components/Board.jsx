@@ -9,6 +9,53 @@ const HOME_FX_MS = 1500;
 const CONFETTI = 16;
 const GOLD = '#fbbf24';
 
+function playArcadeCaptureImpact(context) {
+  const now = context.currentTime;
+  const master = context.createGain();
+  master.gain.setValueAtTime(0.7, now);
+  master.connect(context.destination);
+
+  const blip = context.createOscillator();
+  const blipGain = context.createGain();
+  blip.type = 'square';
+  blip.frequency.setValueAtTime(740, now);
+  blip.frequency.exponentialRampToValueAtTime(260, now + 0.075);
+  blipGain.gain.setValueAtTime(0.18, now);
+  blipGain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+  blip.connect(blipGain).connect(master);
+  blip.start(now);
+  blip.stop(now + 0.085);
+
+  const impact = context.createOscillator();
+  const impactGain = context.createGain();
+  impact.type = 'sine';
+  impact.frequency.setValueAtTime(180, now);
+  impact.frequency.exponentialRampToValueAtTime(48, now + 0.19);
+  impactGain.gain.setValueAtTime(0.65, now);
+  impactGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+  impact.connect(impactGain).connect(master);
+  impact.start(now);
+  impact.stop(now + 0.21);
+
+  const frameCount = Math.floor(context.sampleRate * 0.12);
+  const noiseBuffer = context.createBuffer(1, frameCount, context.sampleRate);
+  const noise = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < frameCount; i++) {
+    noise[i] = Math.random() * 2 - 1;
+  }
+  const noiseSource = context.createBufferSource();
+  const filter = context.createBiquadFilter();
+  const noiseGain = context.createGain();
+  noiseSource.buffer = noiseBuffer;
+  filter.type = 'highpass';
+  filter.frequency.setValueAtTime(900, now);
+  noiseGain.gain.setValueAtTime(0.22, now);
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+  noiseSource.connect(filter).connect(noiseGain).connect(master);
+  noiseSource.start(now);
+  noiseSource.stop(now + 0.125);
+}
+
 // Centre of each colour's triangle (where the home celebration bursts from)
 const centroid = (points) => {
   const pts = points.split(' ').map((p) => p.split(',').map(Number));
@@ -62,6 +109,7 @@ export default function Board({
   const homeTimer = useRef(null);
   const moveAudio = useRef(null);
   const captureAudio = useRef(null);
+  const captureContext = useRef(null);
   const captureAudioUnlocked = useRef(false);
   const captureAudioUnlocking = useRef(false);
   const victoryAudio = useRef(null);
@@ -80,7 +128,10 @@ export default function Board({
     // CC0 sound: "LowHit_01.wav" by Faulkin.
     captureAudio.current = new Audio('/sounds/capture-hit.mp3');
     captureAudio.current.preload = 'auto';
-    captureAudio.current.volume = 0.45;
+    captureAudio.current.volume = 0.65;
+    captureAudio.current.playbackRate = 1.15;
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextConstructor) captureContext.current = new AudioContextConstructor();
     // CC0 sound: "Game Success Fanfare Short" by el_boss.
     victoryAudio.current = new Audio('/sounds/victory-fanfare.mp3');
     victoryAudio.current.preload = 'auto';
@@ -89,8 +140,10 @@ export default function Board({
       moveAudio.current?.pause();
       captureAudio.current?.pause();
       victoryAudio.current?.pause();
+      captureContext.current?.close();
       moveAudio.current = null;
       captureAudio.current = null;
+      captureContext.current = null;
       victoryAudio.current = null;
     };
   }, []);
@@ -117,6 +170,11 @@ export default function Board({
         });
     };
     const unlockGameAudio = () => {
+      if (captureContext.current?.state === 'suspended') {
+        captureContext.current.resume().catch((error) => {
+          console.warn('Could not unlock arcade capture sound:', error);
+        });
+      }
       unlockAudio(captureAudio.current, captureAudioUnlocked, captureAudioUnlocking);
       unlockAudio(victoryAudio.current, victoryAudioUnlocked, victoryAudioUnlocking);
       if (captureAudioUnlocked.current && victoryAudioUnlocked.current) {
@@ -130,6 +188,10 @@ export default function Board({
 
   useEffect(() => {
     if (soundMuted || !kill?.sequence || !captureAudio.current) return;
+    if (captureContext.current?.state === 'running') {
+      playArcadeCaptureImpact(captureContext.current);
+      return;
+    }
     captureAudio.current.currentTime = 0;
     captureAudio.current.play().catch((error) => {
       console.warn('Could not play capture sound:', error);
@@ -439,8 +501,23 @@ export default function Board({
       })()}
       {kill && (
         <>
-          <circle className="kill-burst" cx={kill.x} cy={kill.y} r="0.45" />
+          <circle className="kill-burst red" cx={kill.x} cy={kill.y} r="0.45" />
           <circle className="kill-burst b2" cx={kill.x} cy={kill.y} r="0.45" />
+          {Array.from({ length: 14 }, (_, i) => {
+            const angle = (i / 14) * Math.PI * 2;
+            const distance = 0.65 + (i % 3) * 0.24;
+            const colors = ['#ef4444', '#b91c1c', '#f97316', '#fbbf24', '#fff'];
+            return (
+              <circle
+                key={`${kill.sequence}-${i}`}
+                className="kill-particle"
+                cx={kill.x + Math.cos(angle) * distance}
+                cy={kill.y + Math.sin(angle) * distance}
+                r={i % 3 === 0 ? 0.13 : 0.09}
+                fill={colors[i % colors.length]}
+              />
+            );
+          })}
         </>
       )}
       {celebrateWinner && (

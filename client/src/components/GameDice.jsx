@@ -28,6 +28,12 @@ export default function GameDice({
   const ownRollSoundPending = useRef(false);
   const onRollSettledRef = useRef(onRollSettled);
   const rolling = value != null && settledRoll !== rollId;
+  const [x, y] = TURN[value ?? 1];
+
+  const settleRoll = useCallback((id) => {
+    setSettledRoll(id);
+    onRollSettledRef.current?.(id);
+  }, []);
 
   useEffect(() => {
     onRollSettledRef.current = onRollSettled;
@@ -64,12 +70,10 @@ export default function GameDice({
     }
     previousRollId.current = rollId;
     const land = setTimeout(() => {
-      setSettledRoll(rollId);
-      onRollSettledRef.current?.(rollId);
-    }, ROLL_MS);
+      settleRoll(rollId);
+    }, ROLL_MS + 150);
     return () => clearTimeout(land);
-  }, [playDiceAudio, rollId, value]);
-  const [x, y] = TURN[value ?? 1];
+  }, [playDiceAudio, rollId, settleRoll, value]);
 
   return (
     <button
@@ -90,11 +94,11 @@ export default function GameDice({
     >
       <style>{`
         .gd {
-          --size: var(--gd-size, 40px);
+          --size: 40px;
           position: relative; display: block; flex: none;
           width: var(--size); height: var(--size); margin: 0; padding: 0;
           border: 0; background: none; border-radius: 20%; opacity: 1;
-          perspective: calc(var(--size) * 7);
+          perspective: 280px;
           cursor: default; -webkit-tap-highlight-color: transparent;
         }
         .gd:disabled { opacity: 1; }
@@ -142,10 +146,7 @@ export default function GameDice({
 
         @keyframes gd-tumble {
           0% { transform: rotateX(-90deg) rotateY(90deg); }
-          50% { transform: rotateX(450deg) rotateY(810deg); }
-          78% { transform: rotateX(calc(var(--face-x) + 720deg)) rotateY(calc(var(--face-y) + 1080deg)); }
-          92% { transform: rotateX(calc(var(--face-x) + 936deg)) rotateY(calc(var(--face-y) + 1296deg)); }
-          100% { transform: rotateX(calc(var(--face-x) + 1080deg)) rotateY(calc(var(--face-y) + 1440deg)); }
+          100% { transform: rotateX(1080deg) rotateY(1440deg); }
         }
         @media (prefers-reduced-motion: reduce) {
           .gd-hop { transition: none; }
@@ -153,33 +154,38 @@ export default function GameDice({
           .gd-tumble.rolling { animation: gd-tumble-reduced var(--roll) ease-out both !important; }
           @keyframes gd-tumble-reduced {
             from { transform: rotateX(-90deg) rotateY(90deg); }
-            to { transform: rotateX(calc(var(--face-x) + 720deg)) rotateY(calc(var(--face-y) + 720deg)); }
+            to { transform: rotateX(360deg) rotateY(360deg); }
           }
         }
       `}</style>
 
       <span className="gd-shadow" />
       <span className="gd-hop">
-        <span className={'gd-tumble' + (rolling ? ' rolling' : '')}>
+        <span
+          className={'gd-tumble' + (rolling ? ' rolling' : '')}
+          onAnimationEnd={(event) => {
+            if (event.target === event.currentTarget && rolling) settleRoll(rollId);
+          }}
+        >
           <span
             className="gd-cube"
-            style={{ transform: rolling ? 'rotateX(0deg) rotateY(0deg)' : `rotateX(${x}deg) rotateY(${y}deg)` }}
+            style={{ transform: `rotateX(${x}deg) rotateY(${y}deg)` }}
           >
-            {CUBE.map(([n, t]) => (
-              <span
-                key={n}
-                className={`gd-face f${n}` + (n === 1 && value == null ? ' q' : '')}
-                style={{ transform: `${t} translateZ(calc(var(--size) / 2))` }}
-              >
-                {n === 1 && value == null ? (
-                  <span className="gd-q">?</span>
-                ) : (
-                  Array.from({ length: 9 }, (_, i) => (
-                    <span key={i} className={'gd-dot' + (DOTS[n].includes(i) ? ' on' : '')} />
-                  ))
-                )}
-              </span>
-            ))}
+          {CUBE.map(([n, transform]) => (
+            <span
+              key={n}
+              className={`gd-face f${n}` + (n === 1 && value == null ? ' q' : '')}
+              style={{ transform: `${transform} translateZ(20px)` }}
+            >
+              {n === 1 && value == null ? (
+                <span className="gd-q">?</span>
+              ) : (
+                Array.from({ length: 9 }, (_, i) => (
+                  <span key={i} className={'gd-dot' + (DOTS[n].includes(i) ? ' on' : '')} />
+                ))
+              )}
+            </span>
+          ))}
           </span>
         </span>
       </span>

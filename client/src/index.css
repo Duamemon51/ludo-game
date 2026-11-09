@@ -734,6 +734,25 @@ button { touch-action: manipulation; font-family: inherit; }
   border-radius: 99px;
   box-shadow: 0 4px 0 #991b1b, 0 8px 14px rgba(0, 0, 0, 0.4);
   animation: pulse 1s ease-in-out infinite;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.reconnect-banner button {
+  border: 0;
+  border-radius: 99px;
+  padding: 5px 10px;
+  color: #991b1b;
+  background: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+.reconnect-error {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
 }
 .quit-card {
   width: min(90vw, 360px);
@@ -813,14 +832,27 @@ button { touch-action: manipulation; font-family: inherit; }
 
 .kill-burst {
   fill: none;
-  stroke: #fde047;
-  stroke-width: 0.14;
+  stroke: #ef4444;
+  stroke-width: 0.2;
   transform-box: fill-box;
   transform-origin: center;
   animation: burst 0.6s ease-out forwards;
   pointer-events: none;
 }
-.kill-burst.b2 { stroke: #fff; animation-delay: 0.08s; }
+.kill-burst.b2 { stroke: #fff; stroke-width: 0.12; animation-delay: 0.08s; }
+.kill-burst.red { stroke: #b91c1c; stroke-width: 0.24; }
+.kill-particle {
+  transform-box: fill-box;
+  transform-origin: center;
+  filter: drop-shadow(0 0 2px #ef4444);
+  animation: killParticle 0.55s cubic-bezier(.15, .7, .3, 1) both;
+  pointer-events: none;
+}
+@keyframes killParticle {
+  0% { opacity: 0; scale: 0.1; }
+  20% { opacity: 1; scale: 1.4; }
+  100% { opacity: 0; scale: 0.2; }
+}
 @keyframes burst {
   0% { scale: 0.2; opacity: 1; stroke-width: 0.28; }
   100% { scale: 2.6; opacity: 0; stroke-width: 0.05; }

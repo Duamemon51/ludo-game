@@ -123,21 +123,19 @@ export default function GameTopBar({ onLeave, winAmount, soundMuted, onToggleMut
         WIN
       </button>
 
+      <button
+        type="button"
+        className="game-top-sound-toggle"
+        onClick={onToggleMute}
+        aria-label={soundMuted ? 'Unmute sound' : 'Mute sound'}
+        aria-pressed={soundMuted}
+        title={soundMuted ? 'Unmute sound' : 'Mute sound'}
+      >
+        <SpeakerIcon muted={soundMuted} />
+      </button>
+
       {menuOpen && (
         <div className="game-menu" role="menu">
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              onToggleMute?.();
-              setMenuOpen(false);
-            }}
-          >
-            <span className="token token-blue">
-              <SpeakerIcon muted={soundMuted} />
-            </span>
-            {soundMuted ? 'Unmute sound' : 'Mute sound'}
-          </button>
           <button
             type="button"
             role="menuitem"
