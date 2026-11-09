@@ -19,12 +19,19 @@ const CUBE = [
 
 const ROLL_MS = 850;
 
-export default function GameDice({ value, color, canRoll, onRoll, rollId, soundMuted }) {
+export default function GameDice({
+  value, color, canRoll, onRoll, rollId, soundMuted, onRollSettled,
+}) {
   const [settledRoll, setSettledRoll] = useState(null);
   const diceAudio = useRef(null);
   const previousRollId = useRef(rollId);
   const ownRollSoundPending = useRef(false);
+  const onRollSettledRef = useRef(onRollSettled);
   const rolling = value != null && settledRoll !== rollId;
+
+  useEffect(() => {
+    onRollSettledRef.current = onRollSettled;
+  }, [onRollSettled]);
 
   useEffect(() => {
     // CC0 sound: "Dice Rolling Sound - WOOD SURFACE" by Christopherderp.
@@ -56,7 +63,10 @@ export default function GameDice({ value, color, canRoll, onRoll, rollId, soundM
       else playDiceAudio();
     }
     previousRollId.current = rollId;
-    const land = setTimeout(() => setSettledRoll(rollId), ROLL_MS);
+    const land = setTimeout(() => {
+      setSettledRoll(rollId);
+      onRollSettledRef.current?.(rollId);
+    }, ROLL_MS);
     return () => clearTimeout(land);
   }, [playDiceAudio, rollId, value]);
   const [x, y] = TURN[value ?? 1];

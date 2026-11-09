@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import GameDice from './GameDice';
 import Bubble from './Bubble';
 import PlayerProfile from './PlayerProfile';
@@ -32,12 +32,18 @@ export default function PlayerPanel({
   seat, vertical, side, active, isMe, pct, dice, diceRollId, rolledDice, rolledDiceIds, usedDiceIds = [], canRoll, onRoll, onChat, chatEnabled, bubble, soundMuted, avatar,
 }) {
   const historyRef = useRef(null);
+  const [settledDiceRollId, setSettledDiceRollId] = useState(0);
+  const onRollSettled = useCallback((rollId) => {
+    setSettledDiceRollId((current) => Math.max(current, rollId));
+  }, []);
+  const firstHistoryRollId = diceRollId - rolledDice.length + 1;
   const visibleRolls = rolledDice
     .map((value, index) => ({
       value,
       id: rolledDiceIds?.[index] ?? index,
+      animationId: firstHistoryRollId + index,
     }))
-    .filter(({ id }) => !usedDiceIds.includes(id));
+    .filter(({ id, animationId }) => animationId <= settledDiceRollId && !usedDiceIds.includes(id));
 
   // Keep the latest unused roll visible.
   useEffect(() => {
@@ -145,6 +151,7 @@ export default function PlayerPanel({
             color={seat.color}
             canRoll={canRoll}
             soundMuted={soundMuted}
+            onRollSettled={onRollSettled}
             onRoll={onRoll}
           />
         )}
