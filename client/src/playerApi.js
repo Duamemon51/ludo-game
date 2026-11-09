@@ -1,5 +1,8 @@
 import { API_URL } from './adminApi';
 
+export const PLAYER_SERVER_UNAVAILABLE =
+  'Unable to reach the game server. Check your connection and try again.';
+
 export async function playerRequest(path, { token, method = 'GET', body } = {}) {
   const headers = { Accept: 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -13,7 +16,7 @@ export async function playerRequest(path, { token, method = 'GET', body } = {}) 
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw new Error('Cannot reach the Node.js server. Check that the server is running.');
+    throw new Error(PLAYER_SERVER_UNAVAILABLE);
   }
 
   let payload;

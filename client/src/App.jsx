@@ -233,11 +233,6 @@ export default function App() {
     });
   };
 
-  const retryConnection = () => {
-    if (socket.connected) socket.emit('resume_game');
-    else socket.connect();
-  };
-
   useEffect(() => {
     const onConnect = () => {
       setConnected(true);
@@ -567,7 +562,7 @@ export default function App() {
   return (
     <div className={'app' + (homeScreen ? ' home-screen' : '') + (inGame ? ' in-game' : '') + (homeView === 'login' ? ' login-screen' : '')}>
       {notice && (
-        <div className={`toast toast-${noticeDetails?.type || 'info'}`} role="status" aria-live="polite">
+        <div className={`toast toast-${noticeDetails?.type || 'info'}`} role="status" aria-live="polite" inert={!connected && inGame}>
           <span className="toast-icon" aria-hidden="true">
             {noticeDetails?.type === 'success' ? '✓' : noticeDetails?.type === 'warning' ? '!' : 'i'}
           </span>
@@ -593,9 +588,10 @@ export default function App() {
 
       {!connected && !inGame && homeView !== 'master' && homeView !== 'login' && homeView !== 'menu' && <div className="card">Connecting to server...</div>}
       {!connected && inGame && (
-        <div className="reconnect-banner" role="status">
-          <span>Connection lost. Reconnecting...</span>
-          <button type="button" onClick={retryConnection}>Retry</button>
+        <div className="reconnect-overlay">
+          <section className="reconnect-card" role="alertdialog" aria-modal="true" aria-labelledby="reconnect-title">
+            <strong id="reconnect-title">Connection lost. Reconnecting…</strong>
+          </section>
         </div>
       )}
 
@@ -687,7 +683,7 @@ export default function App() {
       )}
 
       {inGame && (
-        <div className="game">
+        <div className="game" inert={!connected}>
           {status === 'playing' && (
             <GameTopBar
               onLeave={() => setLeaveOpen(true)}
@@ -720,7 +716,7 @@ export default function App() {
       )}
 
       {status === 'over' && game && (
-        <div className={`overlay game-result ${game.winner === myColor ? 'victory' : 'defeat'}`}>
+        <div className={`overlay game-result ${game.winner === myColor ? 'victory' : 'defeat'}`} inert={!connected}>
           {game.winner === myColor && (
             <div className="victory-confetti" aria-hidden="true">
               {Array.from({ length: 32 }, (_, i) => (
@@ -750,7 +746,7 @@ export default function App() {
       )}
 
       {leaveOpen && status === 'playing' && (
-        <div className="overlay" onClick={() => setLeaveOpen(false)}>
+        <div className="overlay" onClick={() => setLeaveOpen(false)} inert={!connected}>
           <div className="card center quit-card" onClick={(e) => e.stopPropagation()}>
             <div className="quit-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -772,7 +768,7 @@ export default function App() {
 
       {GAME_CHAT_ENABLED && (
         <ChatSheet
-          open={chatOpen && (status === 'lobby' || status === 'playing')}
+          open={connected && chatOpen && (status === 'lobby' || status === 'playing')}
           onClose={() => setChatOpen(false)}
           onSend={sendChat}
         />

@@ -720,32 +720,26 @@ button { touch-action: manipulation; font-family: inherit; }
 .sheet-form .input { flex: 1; min-width: 0; }
 
 /* ===== Reconnect, exit, quit ===== */
-.reconnect-banner {
+.reconnect-overlay {
   position: fixed;
-  top: max(8px, env(safe-area-inset-top));
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 40;
-  padding: 10px 16px;
-  font-size: 14px;
-  font-weight: 700;
-  color: #fff;
-  background: linear-gradient(180deg, #ef4444, #dc2626);
-  border-radius: 99px;
-  box-shadow: 0 4px 0 #991b1b, 0 8px 14px rgba(0, 0, 0, 0.4);
-  animation: pulse 1s ease-in-out infinite;
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #160b20c9;
+  backdrop-filter: blur(5px);
 }
-.reconnect-banner button {
-  border: 0;
-  border-radius: 99px;
-  padding: 5px 10px;
-  color: #991b1b;
-  background: #fff;
-  font: inherit;
-  cursor: pointer;
+.reconnect-card {
+  width: min(100%, 320px);
+  padding: 24px;
+  border: 1px solid #ffffff45;
+  border-radius: 20px;
+  color: #fff;
+  background: linear-gradient(160deg, #55236f, #291038);
+  box-shadow: 0 12px 35px #0009, inset 0 1px #ffffff30;
+  text-align: center;
+  font-size: 18px;
 }
 .quit-card {
   width: min(90vw, 360px);

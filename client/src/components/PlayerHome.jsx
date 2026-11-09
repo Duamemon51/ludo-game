@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { playerRequest } from '../playerApi';
+import { playerRequest, PLAYER_SERVER_UNAVAILABLE } from '../playerApi';
 import HomeGameCards from './HomeGameCards';
 
 const PAWN_COLORS = ['#e53935', '#3fa34d', '#fcc419', '#1e88e5'];
@@ -457,6 +457,9 @@ export default function PlayerHome({
         .ph-sheet { display: flex; min-width: 0; flex-direction: column; gap: 12px; border-radius: 28px; padding: 22px; color: var(--player-ink); background: repeating-linear-gradient(90deg, #00000017 0 1px, transparent 1px 6px, #ffffff0d 6px 7px, transparent 7px 13px), linear-gradient(180deg, #b36a2f, #8a4d20 45%, #6b3a17); box-shadow: inset 0 3px 0 #ffffff4d, inset 0 0 0 1.5px #ffdc8259, 0 14px 35px #0008; }
         .ph-status-mobile { display: none; }
         .ph-server-warning { margin-top: 10px; border-radius: 12px; padding: 10px 13px; color: #ffe0ad; background: #ad652c55; font-size: 12px; }
+        .ph-offline-overlay { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px; background: #160b20c9; backdrop-filter: blur(5px); }
+        .ph-offline-card { width: min(100%, 320px); padding: 24px; border: 1px solid #ffffff45; border-radius: 20px; color: #fff; background: linear-gradient(160deg, #55236f, #291038); box-shadow: 0 12px 35px #0009, inset 0 1px #ffffff30; text-align: center; }
+        .ph-offline-card strong { display: block; font-size: 19px; }
         .ph-nav { display: flex; gap: 4px; padding: 4px; border-radius: 15px; background: #281406a6; box-shadow: inset 0 3px 6px #0008; }
         .ph-nav button { flex: 1; min-width: 0; border: 0; border-radius: 11px; padding: 9px 5px; color: #ffe9b0b3; background: transparent; font-family: 'Lilita One', sans-serif; font-size: 13px; }
         .ph-nav button.selected { color: var(--player-ink); background: linear-gradient(180deg, #fff7d6, #f1d68a); box-shadow: inset 0 0 0 1.5px #ffffffb3, 0 2px 0 #8a6a1c, 0 4px 6px #0005; }
@@ -1098,8 +1101,7 @@ export default function PlayerHome({
             <i /> Account: {profile?.status || 'Loading'}
           </div>
           {loading && <div className="ph-server-warning" role="status">Loading your account, wallet and history…</div>}
-          {loadError && <div className="ph-server-warning" role="alert">{loadError} <button type="button" className="ph-icon-btn ph-icon-sm" onClick={refreshPlayerData} aria-label="Retry" title="Retry"><Icon>{ICON_REFRESH}</Icon></button></div>}
-          {!connected && <div className="ph-server-warning" role="status">Game server is offline. You can browse the player panel, but matchmaking is unavailable.</div>}
+          {loadError && (connected || loadError !== PLAYER_SERVER_UNAVAILABLE) && <div className="ph-server-warning" role="alert">{loadError} <button type="button" className="ph-icon-btn ph-icon-sm" onClick={refreshPlayerData} aria-label="Retry" title="Retry"><Icon>{ICON_REFRESH}</Icon></button></div>}
           <nav className="ph-nav" aria-label="Player menu">
             {[
               ['home', 'Home'],
@@ -1480,6 +1482,13 @@ export default function PlayerHome({
               <button type="button" className="ph-back" onClick={() => setWalletRequestOpen(false)}>Cancel</button>
             </div>
           </form>
+        </div>
+      )}
+      {!connected && (
+        <div className="ph-offline-overlay">
+          <section className="ph-offline-card" role="alertdialog" aria-modal="true" aria-labelledby="ph-offline-title">
+            <strong id="ph-offline-title">Connection lost. Reconnecting…</strong>
+          </section>
         </div>
       )}
     </main>
