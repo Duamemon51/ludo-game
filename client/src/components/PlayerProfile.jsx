@@ -1,11 +1,25 @@
 import { COLORS } from '../ludoLayout';
 
-export default function PlayerProfile({ seat, isMe, pct, onChat, chatEnabled, avatar }) {
+export default function PlayerProfile({
+  seat, isMe, pct, onChat, chatEnabled, avatar, onDisableAutoMode,
+}) {
   const initial = (seat.name || '?').trim().charAt(0).toUpperCase();
   const showAvatar = Boolean(avatar && (isMe || seat.isTakeover));
 
   return (
     <div className="player-profile">
+      {isMe && seat.isTakeover && (
+        <label className="auto-mode-control">
+          <input
+            type="checkbox"
+            checked
+            onChange={onDisableAutoMode}
+            aria-label="Disable auto mode"
+          />
+          <span className="auto-mode-label">AUTO</span>
+          <span className="auto-mode-check" aria-hidden="true">✓</span>
+        </label>
+      )}
       <button
         type="button"
         className={'avatar-ring' + (isMe ? ' me' : '')}

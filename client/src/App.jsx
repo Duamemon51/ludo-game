@@ -530,6 +530,7 @@ export default function App() {
               ? 'roll_capture_bonus'
               : 'roll_dice'
         )}
+        onDisableAutoMode={() => socket.emit('disable_auto_mode')}
         soundMuted={soundMuted}
         onChat={() => setChatOpen(true)}
         chatEnabled={GAME_CHAT_ENABLED}

@@ -29,7 +29,7 @@ function MiniDie({ value, latest }) {
 }
 
 export default function PlayerPanel({
-  seat, vertical, side, active, isMe, pct, dice, diceRollId, rolledDice, rolledDiceIds, usedDiceIds = [], canRoll, onRoll, onChat, chatEnabled, bubble, soundMuted, avatar,
+  seat, vertical, side, active, isMe, pct, dice, diceRollId, rolledDice, rolledDiceIds, usedDiceIds = [], canRoll, onRoll, onChat, chatEnabled, bubble, soundMuted, avatar, onDisableAutoMode,
 }) {
   const historyRef = useRef(null);
   const [settledDiceRollId, setSettledDiceRollId] = useState(0);
@@ -142,7 +142,15 @@ export default function PlayerPanel({
       `}</style>
 
       <div className="pmain">
-        <PlayerProfile seat={seat} isMe={isMe} pct={pct} onChat={onChat} chatEnabled={chatEnabled} avatar={avatar} />
+        <PlayerProfile
+          seat={seat}
+          isMe={isMe}
+          pct={pct}
+          onChat={onChat}
+          chatEnabled={chatEnabled}
+          avatar={avatar}
+          onDisableAutoMode={onDisableAutoMode}
+        />
 
         {active && (
           <GameDice
