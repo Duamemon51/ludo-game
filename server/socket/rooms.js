@@ -120,6 +120,17 @@ function rollDiceForCurrentPlayer(room) {
   const seat = seatOf(room, room.game.turn);
   const sixChance = seat?.isBot ? BOT_SIX_CHANCE[seat.level] : null;
   if (sixChance === undefined || sixChance === null) return engine.rollDice();
+  const expertSixCooldown = seat.level === 'expert'
+    ? Math.max(0, seat.sixCooldown || 0)
+    : 0;
+  const finishBotRoll = (value) => {
+    if (seat.level === 'expert') {
+      seat.sixCooldown = value === 6
+        ? (Math.random() < 0.5 ? 1 : 2)
+        : Math.max(0, expertSixCooldown - 1);
+    }
+    return value;
+  };
 
   const consecutiveSixes = (
     room.phase === 'bonus-roll'
@@ -137,13 +148,18 @@ function rollDiceForCurrentPlayer(room) {
     && room.captureBonusSixes >= 1
   );
   const adjustedSixChance = consecutiveSixes
+    || expertSixCooldown > 0
     ? 0
     : afterSix ? sixChance * 0.25 : sixChance;
 
-  const captureDice = findCaptureDice(room.game, seat.color, consecutiveSixes ? 5 : 6);
-  if (captureDice !== null) return captureDice;
+  const captureDice = findCaptureDice(
+    room.game,
+    seat.color,
+    consecutiveSixes || expertSixCooldown > 0 ? 5 : 6
+  );
+  if (captureDice !== null) return finishBotRoll(captureDice);
 
-  if (Math.random() < adjustedSixChance) return 6;
+  if (Math.random() < adjustedSixChance) return finishBotRoll(6);
 
   const weights = [1, 2, 3, 4, 5].map((dice) => {
     const moves = engine.getValidMoves(room.game, seat.color, dice);
@@ -159,10 +175,10 @@ function rollDiceForCurrentPlayer(room) {
 
   for (let i = 0; i < weights.length; i++) {
     roll -= weights[i];
-    if (roll < 0) return i + 1;
+    if (roll < 0) return finishBotRoll(i + 1);
   }
 
-  return 5;
+  return finishBotRoll(5);
 }
 
 function pickBotName(usedNames) {
