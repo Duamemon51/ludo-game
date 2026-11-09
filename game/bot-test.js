@@ -37,6 +37,16 @@ assert.deepStrictEqual(
 );
 console.log("PASS: expert prioritizes capturing the opponent's most advanced token");
 
+// Before unlocking the home lane, expert moves toward opponents it can capture.
+s = engine.createGame(['red', 'yellow']);
+s.tokens.red = [10, 35, -1, -1];
+s.tokens.yellow[0] = 41; // yellow at abs 15; red at 11 can reach it with a future roll
+assert.deepStrictEqual(
+  chooseTurnMove(s, 'red', [{ id: 0, value: 1 }], 'expert'),
+  { tokenIdx: 0, id: 0 }
+);
+console.log('PASS: expert sets up a capture before unlocking its home lane');
+
 // Expert plans against the opponent's next fair roll, including an immediate win.
 s = engine.createGame(['red', 'yellow'], { tokensToWin: 1 });
 s.captures.yellow = engine.CAPTURES_TO_UNLOCK_HOME;
