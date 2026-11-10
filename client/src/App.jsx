@@ -152,6 +152,7 @@ export default function App() {
 
     const playButtonSound = (event) => {
       if (soundMuted) return;
+      if (event.target.closest('.sa-dashboard, .master-dashboard')) return;
       unlockUiAudio();
       const control = event.target.closest('button, [role="button"]');
       if (!control || control.disabled || control.getAttribute('aria-disabled') === 'true') return;

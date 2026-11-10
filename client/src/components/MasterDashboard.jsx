@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { masterRequest } from '../masterApi';
 import DashboardHeader from './DashboardHeader';
 import DashboardSidebar from './DashboardSidebar';
+import MasterRowActions from './MasterRowActions';
 
 const pages = [
   ['Dashboard', 'dashboard'],
@@ -41,6 +42,7 @@ function MasterDashboard({ token, onBack }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [requestSyncError, setRequestSyncError] = useState('');
   const [notice, setNotice] = useState('');
   const [dialog, setDialog] = useState(null);
   const [userName, setUserName] = useState('');
@@ -62,6 +64,7 @@ function MasterDashboard({ token, onBack }) {
       setWallet(data.wallet);
       setMatches(data.matches);
       setLoadError('');
+      setRequestSyncError('');
     } catch (error) {
       setLoadError(error.message);
     } finally {
@@ -80,6 +83,7 @@ function MasterDashboard({ token, onBack }) {
       setWallet(data.wallet);
       setMatches(data.matches);
       setLoadError('');
+      setRequestSyncError('');
     }).catch((error) => {
       if (active) setLoadError(error.message);
     }).finally(() => {
@@ -87,6 +91,30 @@ function MasterDashboard({ token, onBack }) {
     });
     return () => { active = false; };
   }, [token]);
+
+  useEffect(() => {
+    let active = true;
+    const refreshRequests = async () => {
+      if (saving || document.visibilityState !== 'visible') return;
+      try {
+        const requests = await masterRequest('/user-withdrawals', { token });
+        if (active) {
+          setUserWithdrawals(requests);
+          setRequestSyncError('');
+        }
+      } catch (error) {
+        if (active) setRequestSyncError(error.message);
+      }
+    };
+
+    const intervalId = window.setInterval(refreshRequests, 15000);
+    document.addEventListener('visibilitychange', refreshRequests);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', refreshRequests);
+    };
+  }, [saving, token]);
 
   useEffect(() => {
     const expireSession = () => onBack();
@@ -245,22 +273,23 @@ function MasterDashboard({ token, onBack }) {
   return (
     <main className="master-dashboard">
       <style>{`
-        .master-dashboard { --md-ink:#172033;--md-muted:#8290a5;--md-line:#e9edf4;--md-blue:#536dfe;width:100%;min-height:100vh;min-height:100dvh;flex:1;align-self:stretch;display:flex;color:var(--md-ink);background:#f5f7fb;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif }
+        .master-dashboard { --md-ink:#172033;--md-muted:#8290a5;--md-line:#e9edf4;--md-blue:#536dfe;width:100%;min-width:0;min-height:100vh;min-height:100dvh;flex:1;align-self:stretch;display:flex;overflow-x:hidden;color:var(--md-ink);background:#f5f7fb;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif }
         .md-sidebar{width:248px;flex:0 0 248px;display:flex;flex-direction:column;padding:26px 16px 18px;color:#d7dced;background:#151a2d}
         .md-brand{display:flex;align-items:center;gap:11px;padding:0 9px 30px}.md-brand-mark{width:38px;height:38px;display:grid;place-items:center;border-radius:12px;color:#fff;background:linear-gradient(145deg,#7a8cff,#4c5ee8);font-size:15px;font-weight:900;box-shadow:0 5px 14px #536dfe59}.md-brand-name{color:#fff;font-size:16px;font-weight:800;letter-spacing:.5px}.md-brand-caption{margin-top:2px;color:#8e98b1;font-size:10px;font-weight:700;letter-spacing:1.4px}
         .md-master-card{margin:0 3px 25px;padding:12px;border:1px solid #ffffff14;border-radius:11px;background:#ffffff08}.md-master-card strong,.md-master-card span{display:block}.md-master-card strong{color:#fff;font-size:12px}.md-master-card span{margin-top:4px;color:#9aa5bd;font-size:10px}
         .md-nav-label{padding:0 12px 9px;color:#78829c;font-size:10px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase}.md-nav{display:grid;gap:5px}.md-nav button{width:100%;min-height:43px;display:flex;align-items:center;gap:11px;padding:0 11px;border:0;border-radius:9px;color:#aab3c9;background:transparent;text-align:left;font:inherit;font-size:12px;font-weight:700;cursor:pointer}.md-nav button:hover{color:#fff;background:#ffffff12}.md-nav button.selected{color:#fff;background:#293253;box-shadow:inset 3px 0 #8290ff}.md-nav-icon{width:25px;height:25px;display:grid;place-items:center;border-radius:7px;color:#abb8ff;background:#8290ff21;font-size:9px;font-weight:900}
         .md-sidebar-bottom{margin-top:auto}.md-back{width:100%;min-height:36px;margin-top:11px;border:1px solid #ffffff29;border-radius:8px;color:#dce2f1;background:transparent;font:inherit;font-size:11px;font-weight:700;cursor:pointer}
         .md-main{min-width:0;flex:1}.md-topbar{min-height:72px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 32px;border-bottom:1px solid var(--md-line);background:#fff}.md-crumb{color:var(--md-muted);font-size:12px}.md-crumb strong{color:var(--md-ink)}.md-top-actions{display:flex;align-items:center;gap:11px}.md-back-top{min-height:33px;padding:0 10px;border:1px solid var(--md-line);border-radius:8px;color:#647087;background:#fff;font:inherit;font-size:10px;font-weight:750;cursor:pointer}.md-avatar{width:35px;height:35px;display:grid;place-items:center;border-radius:50%;color:#fff;background:linear-gradient(145deg,#72a8ff,#5269ef);font-size:11px;font-weight:850}
-        .md-content{width:min(100%,1440px);margin:0 auto;padding:30px 32px 42px}.md-notice,.md-error-banner{margin-bottom:15px;padding:10px 13px;border:1px solid #ccecdf;border-radius:9px;color:#187c60;background:#effaf5;font-size:11px;font-weight:700}.md-error-banner{border-color:#f2d5d9;color:#bd4756;background:#fff0f1}.md-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:20px}.md-eyebrow{margin:0 0 7px;color:#7383ff;font-size:10px;font-weight:850;letter-spacing:1.6px}.md-heading h1{margin:0;font-size:clamp(24px,3vw,29px);letter-spacing:-.7px}.md-subtitle{margin:7px 0 0;color:var(--md-muted);font-size:12px}
+        .md-content{width:min(100%,1440px);min-width:0;box-sizing:border-box;margin:0 auto;padding:30px 32px 42px}.md-notice,.md-error-banner{margin-bottom:15px;padding:10px 13px;border:1px solid #ccecdf;border-radius:9px;color:#187c60;background:#effaf5;font-size:11px;font-weight:700;overflow-wrap:anywhere}.md-error-banner{border-color:#f2d5d9;color:#bd4756;background:#fff0f1}.md-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:20px}.md-heading>div{min-width:0}.md-eyebrow{margin:0 0 7px;color:#7383ff;font-size:10px;font-weight:850;letter-spacing:1.6px}.md-heading h1{margin:0;font-size:clamp(24px,3vw,29px);letter-spacing:-.7px;overflow-wrap:anywhere}.md-subtitle{margin:7px 0 0;color:var(--md-muted);font-size:12px;line-height:1.5}
         .md-primary{min-height:37px;padding:0 12px;border:1px solid var(--md-blue);border-radius:8px;color:#fff;background:var(--md-blue);font:inherit;font-size:10px;font-weight:750;cursor:pointer}.md-primary:hover{background:#4058ed}.md-primary:disabled,.md-action:disabled{opacity:.48;cursor:not-allowed}
         .md-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:17px}.md-stats-five{grid-template-columns:repeat(5,minmax(0,1fr))}.md-stat{padding:16px;border:1px solid var(--md-line);border-radius:12px;background:#fff}.md-stat span{display:block;color:var(--md-muted);font-size:10px;font-weight:650}.md-stat strong{display:block;margin-top:8px;color:#26334a;font-size:20px}.md-stat small{display:block;margin-top:4px;color:var(--md-muted);font-size:9px}
-        .md-card{min-width:0;margin-top:16px;border:1px solid var(--md-line);border-radius:13px;background:#fff;box-shadow:0 3px 12px #1a274608}.md-card:first-of-type{margin-top:0}.md-card-head{min-height:57px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 16px;border-bottom:1px solid #f0f2f7}.md-card-head h2{margin:0;font-size:13px}.md-card-head span{color:var(--md-muted);font-size:10px}.md-table-wrap{overflow-x:auto}.md-table{width:100%;border-collapse:collapse;text-align:left}.md-table th{padding:11px 15px;color:#929db0;background:#fbfcfe;font-size:9px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;white-space:nowrap}.md-table td{padding:12px 15px;border-top:1px solid #f1f3f7;color:#58647a;font-size:10px;white-space:nowrap}.md-user{display:flex;align-items:center;gap:8px}.md-user-avatar{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;color:#fff;background:linear-gradient(145deg,#82a6ff,#5269ef);font-size:9px;font-weight:850}.md-user-copy strong,.md-user-copy span{display:block}.md-user-copy strong{color:#38445a;font-size:10px}.md-user-copy span{margin-top:3px;color:#9aa4b4;font-size:9px}
+        .md-card{min-width:0;margin-top:16px;border:1px solid var(--md-line);border-radius:13px;background:#fff;box-shadow:0 3px 12px #1a274608}.md-card:first-of-type{margin-top:0}.md-card-head{min-height:57px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 16px;border-bottom:1px solid #f0f2f7}.md-card-head h2{margin:0;font-size:13px}.md-card-head span{color:var(--md-muted);font-size:10px}.md-table-wrap{width:100%;min-width:0;overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}.md-table{width:max-content;min-width:100%;border-collapse:collapse;text-align:left}.md-table th{padding:11px 15px;color:#929db0;background:#fbfcfe;font-size:9px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;white-space:nowrap}.md-table td{padding:12px 15px;border-top:1px solid #f1f3f7;color:#58647a;font-size:10px;white-space:nowrap}.md-user{display:flex;align-items:center;gap:8px}.md-user-avatar{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;color:#fff;background:linear-gradient(145deg,#82a6ff,#5269ef);font-size:9px;font-weight:850}.md-user-copy strong,.md-user-copy span{display:block}.md-user-copy strong{color:#38445a;font-size:10px}.md-user-copy span{margin-top:3px;color:#9aa4b4;font-size:9px}
         .md-status{display:inline-flex;align-items:center;gap:5px;padding:5px 8px;border-radius:999px;color:#15956e;background:#eaf8f2;font-size:9px;font-weight:800}.md-status::before{width:5px;height:5px;border-radius:50%;background:currentColor;content:""}.md-status.inactive,.md-status.blocked,.md-status.cancelled,.md-status.pending,.md-status.rejected{color:#bd4756;background:#fff0f1}
         .md-action{min-height:29px;padding:0 8px;border:1px solid #dfe4ee;border-radius:7px;color:#5e6b82;background:#fff;font:inherit;font-size:9px;font-weight:750;cursor:pointer}.md-action:hover{background:#f7f8fc}.md-action.primary{color:#4e62e8;border-color:#dce1ff;background:#f6f7ff}.md-action.danger{color:#bd4756;border-color:#f2d5d9}.md-action:disabled{opacity:.48;cursor:not-allowed}.md-actions{display:flex;align-items:center;flex-wrap:wrap;gap:5px}.md-user-select{min-height:29px;padding:0 6px;border:1px solid #dfe4ee;border-radius:7px;color:#5e6b82;background:#fff;font:inherit;font-size:9px}.md-wallet{color:#313e55;font-size:11px;font-weight:800}
+        .md-row-actions{display:flex;justify-content:center}.md-row-actions-trigger{display:grid;place-items:center;width:34px;height:34px;padding:0;border:1px solid transparent;border-radius:9px;color:#647087;background:transparent;cursor:pointer}.md-row-actions-trigger:hover,.md-row-actions-trigger[aria-expanded=true]{border-color:#dfe4ee;color:#4e62e8;background:#f6f7ff}.md-row-actions-trigger svg{fill:currentColor}.md-row-actions-trigger:focus-visible,.md-row-actions-item:focus-visible{outline:2px solid #536dfe;outline-offset:2px}.md-row-actions-menu{--md-ink:#172033;--md-line:#e9edf4;--md-blue:#536dfe;position:fixed;z-index:1000;min-width:176px;max-height:calc(100dvh - 16px);overflow-y:auto;padding:5px;border:1px solid var(--md-line);border-radius:11px;background:#fff;box-shadow:0 12px 32px #1720332e}.md-row-actions-item{display:flex;align-items:center;width:100%;min-height:38px;padding:8px 10px;border:0;border-radius:7px;color:var(--md-ink);background:transparent;font:inherit;font-size:11px;text-align:left;white-space:nowrap;cursor:pointer}.md-row-actions-item:hover{background:#f5f7fb}.md-row-actions-item.primary{color:#4e62e8}.md-row-actions-item.danger{color:#bd4756}.md-row-actions-item:disabled{opacity:.45;cursor:not-allowed}
         .md-balance{display:flex;flex-wrap:wrap;gap:18px;padding:16px}.md-balance span{display:block;color:#8b97aa;font-size:10px}.md-balance strong{display:block;margin-top:5px;color:#29364c;font-size:17px}.md-explainer{margin:0 16px 15px;padding:10px 12px;border:1px solid #f4e3c2;border-radius:8px;color:#916624;background:#fff9ec;font-size:10px;line-height:1.5}.md-empty{padding:25px!important;color:#8995a8!important;text-align:center}
         .md-dialog-backdrop{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:18px;background:#0f16208c}.md-dialog{width:min(100%,410px);max-height:90dvh;overflow-y:auto;padding:22px;border:1px solid var(--md-line);border-radius:15px;background:#fff;box-shadow:0 24px 70px #0a122047}.md-dialog h2{margin:0;color:#202b40;font-size:18px}.md-dialog>p{margin:7px 0 17px;color:#8290a5;font-size:11px;line-height:1.5}.md-fields{display:grid;gap:11px}.md-fields label{display:grid;gap:6px;color:#526078;font-size:10px;font-weight:750}.md-fields input,.md-fields select,.md-fields textarea{min-height:41px;width:100%;padding:0 10px;border:1px solid #dfe4ee;border-radius:8px;color:#27344a;background:#fff;font:inherit;font-size:12px}.md-fields textarea{min-height:72px;padding:9px 10px;resize:vertical}.md-error{margin:10px 0 0!important;color:#bc4351!important;font-size:11px}.md-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:19px}.md-dialog-actions button{min-height:37px;padding:0 12px;border:1px solid #dfe4ee;border-radius:8px;color:#647087;background:#fff;font:inherit;font-size:10px;font-weight:750;cursor:pointer}.md-dialog-actions button[type=submit]{color:#fff;border-color:var(--md-blue);background:var(--md-blue)}
-        @media(max-width:1100px){.md-stats-five{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:900px){.md-sidebar{width:210px;flex-basis:210px}.md-content{padding:25px 20px 34px}.md-topbar{padding-right:20px;padding-left:20px}}@media(max-width:680px){.master-dashboard{flex-direction:column}.md-sidebar{width:100%;flex:none;padding:11px 13px}.md-brand{padding:0 3px 10px}.md-brand-mark{width:31px;height:31px}.md-master-card,.md-nav-label,.md-sidebar-bottom{display:none}.md-nav{display:flex;overflow-x:auto;gap:5px}.md-nav button{width:auto;min-height:37px;gap:7px;padding:0 9px;font-size:10px}.md-nav-icon{width:22px;height:22px}.md-topbar{min-height:54px;padding:0 13px}.md-content{padding:20px 12px 28px}.md-heading{align-items:flex-start}.md-stats,.md-stats-five{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.md-stat{padding:12px}.md-stat strong{font-size:16px}}@media(max-width:420px){.md-content{padding-right:9px;padding-left:9px}.md-table th,.md-table td{padding-right:10px;padding-left:10px}}
+        @media(max-width:1100px){.md-stats-five{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:900px){.md-content{padding:25px 20px 34px}.md-topbar{padding-right:20px;padding-left:20px}.md-stats-five{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:680px){.md-content{width:100%;padding:20px 12px 28px}.md-topbar{min-height:54px;padding:0 13px}.md-heading{align-items:flex-start;flex-wrap:wrap;gap:12px}.md-heading>.md-actions{width:100%;flex-wrap:wrap}.md-heading>.md-primary{max-width:100%}.md-stats,.md-stats-five{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.md-stat{min-width:0;padding:12px}.md-stat strong{font-size:16px;overflow-wrap:anywhere}.md-card-head{min-height:52px;padding:10px 12px;align-items:flex-start;flex-direction:column;justify-content:center;gap:4px}.md-actions{flex-wrap:wrap}.md-dialog-backdrop{align-items:end;padding:10px 10px max(10px,env(safe-area-inset-bottom))}.md-dialog{width:100%;max-height:min(88dvh,780px);padding:20px 16px;border-radius:18px}.md-dialog-actions{position:sticky;bottom:-20px;padding:12px 0 max(2px,env(safe-area-inset-bottom));background:#fff}.md-fields input,.md-fields select,.md-fields textarea{font-size:16px}}@media(max-width:420px){.md-content{padding-right:9px;padding-left:9px}.md-stats,.md-stats-five{grid-template-columns:1fr}.md-table th,.md-table td{padding:10px 9px}.md-balance{gap:14px;padding:13px}.md-dialog-actions{flex-direction:column-reverse}.md-dialog-actions button{width:100%}}
       `}</style>
 
       <DashboardSidebar
@@ -299,6 +328,7 @@ function MasterDashboard({ token, onBack }) {
         <div className="md-content">
           {notice && <div className="md-notice" role="status">{notice}</div>}
           {loadError && <div className="md-error-banner" role="alert">{loadError} <button type="button" className="md-action" onClick={refreshData}>Retry</button></div>}
+          {requestSyncError && <div className="md-error-banner" role="alert">Could not refresh user wallet requests: {requestSyncError}</div>}
           {loading && <section className="md-card"><div className="md-card-head"><h2>Loading Master data</h2></div><div className="md-balance">Connecting to your account…</div></section>}
           {!loading && master && (
             <>
@@ -323,14 +353,21 @@ function MasterDashboard({ token, onBack }) {
                   {users.map((user) => <tr key={user.id}>
                     <td><div className="md-user"><span className="md-user-avatar">{initials(user.name)}</span><span className="md-user-copy"><strong>{user.name}</strong><span>{user.phone || 'No phone'}</span></span></div></td>
                     <td>{user.loginId}</td><td><span className={`md-status ${user.status.toLowerCase()}`}>{user.status}</span></td><td><span className="md-wallet">{formatAmount(user.wallet)}</span></td><td>{user.lastPlayed}</td><td>{user.createdAt}</td>
-                    <td><div className="md-actions">
-                      <button type="button" className="md-action primary" disabled={master.status !== 'Active' || user.status === 'Blocked'} onClick={() => openDialog('user-deposit', user)}>Deposit</button>
-                      <button type="button" className="md-action" disabled={master.status !== 'Active' || user.status === 'Blocked' || availableUserBalance(user) <= 0} onClick={() => openDialog('user-withdraw', user)}>Withdraw</button>
-                      {user.status !== 'Blocked' && <select className="md-user-select" aria-label={`${user.name} account status`} value={user.status.toUpperCase()} disabled={master.status !== 'Active' || user.gameState === 'Playing'} onChange={(event) => changeUserStatus(user, event.target.value)}><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select>}
-                      <button type="button" className={`md-action${user.status === 'Blocked' ? '' : ' danger'}`} disabled={master.status !== 'Active' || user.gameState === 'Playing'} title={user.gameState === 'Playing' ? 'Available after the live match finishes' : undefined} onClick={() => toggleBlock(user)}>{user.status === 'Blocked' ? 'Unblock' : 'Block'}</button>
-                      <button type="button" className="md-action" disabled={master.status !== 'Active' || user.status === 'Blocked'} onClick={() => openDialog('edit-user', user)}>Edit</button>
-                      <button type="button" className="md-action" onClick={() => setSelectedUserId(user.id)}>View history</button>
-                    </div></td>
+                    <td><MasterRowActions
+                      label={`Actions for ${user.name}`}
+                      actions={[
+                        { label: 'Deposit', tone: 'primary', disabled: master.status !== 'Active' || user.status === 'Blocked', onSelect: () => openDialog('user-deposit', user) },
+                        { label: 'Withdraw', disabled: master.status !== 'Active' || user.status === 'Blocked' || availableUserBalance(user) <= 0, onSelect: () => openDialog('user-withdraw', user) },
+                        ...(user.status !== 'Blocked' ? [{
+                          label: `Set ${user.status === 'Active' ? 'inactive' : 'active'}`,
+                          disabled: master.status !== 'Active' || user.gameState === 'Playing',
+                          onSelect: () => changeUserStatus(user, user.status === 'Active' ? 'INACTIVE' : 'ACTIVE'),
+                        }] : []),
+                        { label: user.status === 'Blocked' ? 'Unblock' : 'Block', tone: user.status === 'Blocked' ? '' : 'danger', disabled: master.status !== 'Active' || user.gameState === 'Playing', onSelect: () => toggleBlock(user) },
+                        { label: 'Edit', disabled: master.status !== 'Active' || user.status === 'Blocked', onSelect: () => openDialog('edit-user', user) },
+                        { label: 'View history', onSelect: () => setSelectedUserId(user.id) },
+                      ]}
+                    /></td>
                   </tr>)}
                   {!users.length && <tr><td className="md-empty" colSpan="7">No users yet. Create a user to get started.</td></tr>}
                 </tbody></table></div></section>
@@ -351,7 +388,7 @@ function MasterDashboard({ token, onBack }) {
 
               {activePage === 'User requests' && <><div className="md-heading"><div><p className="md-eyebrow">USER WALLET REQUESTS</p><h1>User deposit and withdrawal requests</h1><p className="md-subtitle">Approve deposits to debit your Master wallet and credit the user, or approve withdrawals to do the reverse. Rejections require a reason.</p></div></div>
                 <section className="md-card"><div className="md-card-head"><h2>Requests from your users</h2><span>{pendingUserRequests.length} pending</span></div><div className="md-table-wrap"><table className="md-table"><thead><tr><th>Request ID</th><th>User</th><th>Type</th><th>Amount</th><th>Date</th><th>User balance</th><th>Status</th><th>Decision</th></tr></thead><tbody>
-                  {userWithdrawals.map((request) => <tr key={request.id}><td><strong>{request.id}</strong></td><td>{request.userName}</td><td>{request.type}</td><td>{formatAmount(request.amount)}</td><td>{request.date}</td><td>{formatAmount(request.userBalance)}</td><td><span className={`md-status ${request.status.toLowerCase()}`}>{request.status}</span></td><td>{request.status === 'Pending' ? <div className="md-actions"><button type="button" className="md-action primary" disabled={master.status !== 'Active'} onClick={() => openDialog('resolve-user-request', null, request, 'Approved')}>Approve</button><button type="button" className="md-action danger" disabled={master.status !== 'Active'} onClick={() => openDialog('resolve-user-request', null, request, 'Rejected')}>Reject</button></div> : request.reason || 'Reviewed'}</td></tr>)}
+                  {userWithdrawals.map((request) => <tr key={request.id}><td><strong>{request.id}</strong></td><td>{request.userName}</td><td>{request.type}</td><td>{formatAmount(request.amount)}</td><td>{request.date}</td><td>{formatAmount(request.userBalance)}</td><td><span className={`md-status ${request.status.toLowerCase()}`}>{request.status}</span></td><td>{request.status === 'Pending' ? <MasterRowActions label={`Decide on ${request.type.toLowerCase()} request from ${request.userName}`} actions={[{ label: 'Approve', tone: 'primary', disabled: master.status !== 'Active', onSelect: () => openDialog('resolve-user-request', null, request, 'Approved') }, { label: 'Reject', tone: 'danger', disabled: master.status !== 'Active', onSelect: () => openDialog('resolve-user-request', null, request, 'Rejected') }]} /> : request.reason || 'Reviewed'}</td></tr>)}
                   {!userWithdrawals.length && <tr><td className="md-empty" colSpan="8">No wallet requests from users.</td></tr>}
                 </tbody></table></div></section>
               </>}

@@ -1,3 +1,5 @@
+import SuperAdminRowActions from './SuperAdminRowActions';
+
 export default function SuperAdminMastersPage({
   detailMaster,
   masters,
@@ -20,7 +22,7 @@ export default function SuperAdminMastersPage({
           {!detailMaster.ledger.length && <tr><td colSpan="6" className="sa-empty">No ledger entries yet.</td></tr>}
         </tbody></table></div></section>
         <section className="sa-card"><div className="sa-card-head"><h2>Users under this Master</h2><span>{detailMaster.users.length} users · read-only</span></div><div className="sa-table-wrap"><table className="sa-table"><thead><tr><th>User</th><th>Login ID</th><th>Own status</th><th>Effective access</th><th>Wallet</th><th>Game</th><th>Action</th></tr></thead><tbody>
-          {detailMaster.users.map((user) => <tr key={user.id}><td>{user.name}</td><td>{user.loginId}</td><td>{user.previousStatus}</td><td><span className={`sa-status ${detailMaster.status === 'Blocked' || user.status === 'Blocked' ? 'blocked' : user.status.toLowerCase()}`}>{detailMaster.status === 'Blocked' || user.status === 'Blocked' ? 'Blocked' : user.status}</span></td><td>{money(user.balance)}</td><td>{user.gameState}</td><td><button type="button" className="sa-action danger" onClick={() => onToggleUser(user)}>{user.status === 'Blocked' ? 'Unblock user' : 'Block user'}</button></td></tr>)}
+          {detailMaster.users.map((user) => <tr key={user.id}><td>{user.name}</td><td>{user.loginId}</td><td>{user.previousStatus}</td><td><span className={`sa-status ${detailMaster.status === 'Blocked' || user.status === 'Blocked' ? 'blocked' : user.status.toLowerCase()}`}>{detailMaster.status === 'Blocked' || user.status === 'Blocked' ? 'Blocked' : user.status}</span></td><td>{money(user.balance)}</td><td>{user.gameState}</td><td><SuperAdminRowActions actions={[{ label: user.status === 'Blocked' ? 'Unblock user' : 'Block user', tone: 'danger', onSelect: () => onToggleUser(user) }]} label={`Actions for ${user.name}`} /></td></tr>)}
         </tbody></table></div></section>
         <section className="sa-card"><div className="sa-card-head"><h2>Wallet request history</h2></div><div className="sa-table-wrap"><table className="sa-table"><thead><tr><th>Request ID</th><th>Type</th><th>Amount</th><th>Date</th><th>Status</th><th>Decision note</th></tr></thead><tbody>
           {requests.filter((request) => request.masterId === detailMaster.id).map((request) => <tr key={request.id}><td>{request.id}</td><td>{request.type}</td><td>{money(request.amount)}</td><td>{request.date}</td><td><span className={`sa-status ${request.status.toLowerCase()}`}>{request.status}</span></td><td>{request.reason || '—'}</td></tr>)}
@@ -39,13 +41,16 @@ export default function SuperAdminMastersPage({
           {masters.map((master) => <tr key={master.id}>
             <td><div className="sa-person"><span className="sa-person-avatar">{initials(master.name)}</span><span className="sa-person-copy"><strong>{master.name}</strong><span>{master.phone || 'No phone'}</span></span></div></td>
             <td>{master.loginId}</td><td><span className={`sa-status ${master.status.toLowerCase()}`}>{master.status}</span></td><td><strong>{money(master.wallet)}</strong></td><td>{master.users}</td><td>{master.createdAt}</td>
-            <td><div className="sa-actions">
-              <button type="button" className="sa-action primary" onClick={() => onOpenDialog('add', master)}>Add balance</button>
-              <button type="button" className="sa-action" onClick={() => onOpenDialog('deduct', master)}>Deduct</button>
-              <button type="button" className="sa-action danger" onClick={() => onToggleMaster(master)}>{master.status === 'Active' ? 'Block' : 'Unblock'}</button>
-              <button type="button" className="sa-action" onClick={() => onOpenMasterDetails(master.id)}>View details</button>
-              <button type="button" className="sa-action" onClick={() => onOpenDialog('edit-master', master)}>Edit</button>
-            </div></td>
+            <td><SuperAdminRowActions
+              label={`Actions for ${master.name}`}
+              actions={[
+                { label: 'Add balance', tone: 'primary', onSelect: () => onOpenDialog('add', master) },
+                { label: 'Deduct', onSelect: () => onOpenDialog('deduct', master) },
+                { label: master.status === 'Active' ? 'Block' : 'Unblock', tone: 'danger', onSelect: () => onToggleMaster(master) },
+                { label: 'View details', onSelect: () => onOpenMasterDetails(master.id) },
+                { label: 'Edit', onSelect: () => onOpenDialog('edit-master', master) },
+              ]}
+            /></td>
           </tr>)}
         </tbody></table></div>
       </section>
