@@ -379,8 +379,9 @@ async function getWithdrawals(req, res, next) {
     const params = status ? [status] : [];
     const [rows] = await pool.execute(
       `SELECT wr.*, a.display_name AS master_name
-       FROM withdrawal_requests wr JOIN accounts a ON a.id = wr.master_id
-       ${where} ORDER BY wr.requested_at DESC`,
+       FROM withdrawal_requests wr
+       JOIN accounts a ON a.id = wr.master_id AND a.role = 'MASTER'
+      ${where} ORDER BY wr.requested_at DESC`,
       params
     );
     res.json(rows.map(mapRequest));
