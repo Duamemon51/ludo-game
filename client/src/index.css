@@ -157,7 +157,8 @@ button { touch-action: manipulation; font-family: inherit; }
   padding-top: 26px;
 }
 
-.token { transition: transform 0.085s linear; filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.5)); }
+.token-pos { transition: transform 0.085s linear; }
+.token { filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.5)); }
 .token.movable { cursor: pointer; }
 .token-dice-menu { cursor: pointer; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.55)); }
 .token-dice-menu rect { fill: #fff; stroke: #111827; stroke-width: 0.08; }
@@ -207,13 +208,13 @@ button { touch-action: manipulation; font-family: inherit; }
   align-items: center;
   justify-content: center;
   gap: 3px;
-  min-width: 62px;
-  padding: 3px 6px;
-  border: 1.5px solid #fff3a1;
+  min-width: 50px;
+  padding: 3px 5px;
+  border: 1.5px solid #bbf7d0;
   border-radius: 999px;
-  background: linear-gradient(180deg, #fff9a6 0%, #ffc928 28%, #ff9800 100%);
-  box-shadow: 0 0 3px 1px #fff, 0 0 8px 3px rgba(255, 217, 46, 0.9), inset 0 1px 2px rgba(255, 255, 255, 0.85);
-  color: #3e2100;
+  background: linear-gradient(180deg, #bbf7d0 0%, #4ade80 32%, #16a34a 100%);
+  box-shadow: 0 0 3px 1px #fff, 0 0 8px 3px rgba(34, 197, 94, 0.75), inset 0 1px 2px rgba(255, 255, 255, 0.85);
+  color: #052e16;
   font-size: 8px;
   font-weight: 1000;
   letter-spacing: 0.12em;
@@ -238,14 +239,6 @@ button { touch-action: manipulation; font-family: inherit; }
 .auto-mode-label {
   text-shadow: 0 1px rgba(255, 255, 255, 0.65);
 }
-.auto-mode-check {
-  color: #04a927;
-  font-size: 12px;
-  font-weight: 1000;
-  letter-spacing: 0;
-  line-height: 0.8;
-  text-shadow: 0 1px 0 #fff;
-}
 .auto-mode-control:focus-within {
   outline: 2px solid #fff;
   outline-offset: 2px;
@@ -257,10 +250,9 @@ button { touch-action: manipulation; font-family: inherit; }
   color: #333;
   animation: none;
 }
-.auto-mode-control:has(input:not(:checked)) .auto-mode-check { visibility: hidden; }
 @keyframes auto-mode-pulse {
-  0%, 100% { box-shadow: 0 0 3px 1px #fff, 0 0 8px 3px rgba(255, 217, 46, 0.85), inset 0 1px 2px rgba(255, 255, 255, 0.85); }
-  50% { box-shadow: 0 0 4px 2px #fff, 0 0 11px 4px rgba(255, 217, 46, 1), inset 0 1px 2px rgba(255, 255, 255, 0.95); }
+  0%, 100% { box-shadow: 0 0 3px 1px #fff, 0 0 8px 3px rgba(34, 197, 94, 0.75), inset 0 1px 2px rgba(255, 255, 255, 0.85); }
+  50% { box-shadow: 0 0 4px 2px #fff, 0 0 11px 4px rgba(34, 197, 94, 0.95), inset 0 1px 2px rgba(255, 255, 255, 0.95); }
 }
 @media (prefers-reduced-motion: reduce) {
   .auto-mode-control { animation: none; }
@@ -849,7 +841,8 @@ button { touch-action: manipulation; font-family: inherit; }
   .code-box { font-size: 32px; letter-spacing: 6px; }
 }
 @media (max-width: 600px) {
-  .token { filter: none; transition: transform 0.32s cubic-bezier(0.2, 0.75, 0.3, 1); will-change: transform; }
+  .token { filter: none; }
+  .token-pos { transition: transform 0.32s cubic-bezier(0.2, 0.75, 0.3, 1); will-change: transform; }
   .app.in-game .player-profile .pname:not(.player-name-you) {
     max-width: min(42vw, 150px);
   }

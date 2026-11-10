@@ -17,7 +17,6 @@ export default function PlayerProfile({
             aria-label="Disable auto mode"
           />
           <span className="auto-mode-label">AUTO</span>
-          <span className="auto-mode-check" aria-hidden="true">✓</span>
         </label>
       )}
       <button

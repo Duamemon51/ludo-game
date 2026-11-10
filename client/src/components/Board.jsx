@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  COLORS, PATH, LANES, START, BASE_SPOTS, FINISH_XY, HOME_TRIANGLES, layoutTokens,
+  PATH, LANES, START, BASE_SPOTS, FINISH_XY, HOME_TRIANGLES, layoutTokens,
 } from '../ludoLayout';
 import BoardBackground from './BoardBackground';
-const RADIUS = 0.36;
+import Token, { PawnDefs } from './Token';
 const MOVE_STEP_MS = 250;
 const HOME_FX_MS = 1500;
 const CONFETTI = 16;
@@ -252,12 +252,12 @@ export default function Board({
           (token) => `${token.color}-${token.idx}` === movingToken
         );
         const keyframes = [
-          { transform: `translate(${start.x}px, ${start.y}px)` },
+          { transform: `translate(${start.x}px, ${start.y}px) scale(${start.scale * 0.9})` },
           ...positions.slice(1, -1).map((position) => {
             const [x, y] = squareCenter(lastMove.color, position);
-            return { transform: `translate(${x}px, ${y}px)` };
+            return { transform: `translate(${x}px, ${y}px) scale(${start.scale * 0.9})` };
           }),
-          { transform: `translate(${end.x}px, ${end.y}px)` },
+          { transform: `translate(${end.x}px, ${end.y}px) scale(${end.scale * 0.9})` },
         ];
         element.animate(keyframes, {
           duration: (positions.length - 1) * MOVE_STEP_MS,
@@ -409,13 +409,13 @@ export default function Board({
     <>
     <div className="board-orientation" style={{ '--board-rotation': `${rotation}deg` }}>
     <svg viewBox="0 0 15 15" className={`board${kill ? ' shake' : ''}${celebrateWinner ? ' win-shake' : ''}`}>
+      <PawnDefs />
       <BoardBackground turn={turn} captures={captures} />
 
       {/* Tokens */}
       {items.map((t) => {
         const settled = true;
         const canMove = t.color === myColor && movable.includes(t.idx) && settled && !pendingCapture;
-        const r = RADIUS * t.scale;
         const id = `${t.color}-${t.idx}`;
         const activeCapture = pendingCapture?.captures[captureIndex];
         const heldCapture = pendingCapture?.captures.find(
@@ -425,23 +425,36 @@ export default function Board({
         const isKiller = kill?.by === id;
         const isHoming = homeFx.some((fx) => fx.id === id);
         const isWinner = celebrateWinner === t.color && tokens[t.color][t.idx] === 57;
+        const extraClasses = [
+          isCaptured && 'captured',
+          isKiller && 'killer',
+          isHoming && 'homing',
+          isWinner && 'winner-token',
+        ].filter(Boolean).join(' ');
+        const animVars = isCaptured
+          ? {
+            '--home-dx': `${kill.homeDx}px`,
+            '--home-dy': `${kill.homeDy}px`,
+            '--mid-dx': `${kill.midDx}px`,
+            '--mid-dy': `${kill.midDy}px`,
+          }
+          : undefined;
+        const positionedToken = {
+          ...t,
+          x: isCaptured ? kill.x : heldCapture ? heldCapture.x : t.x,
+          y: isCaptured ? kill.y : heldCapture ? heldCapture.y : t.y,
+        };
         return (
-          <g
-            key={t.color + t.idx}
-            ref={(element) => {
+          <Token
+            key={`${t.color}-${t.idx}`}
+            t={positionedToken}
+            movable={canMove}
+            className={extraClasses}
+            style={animVars}
+            elementRef={(element) => {
               const tokenId = `${t.color}-${t.idx}`;
               if (element) tokenElements.current.set(tokenId, element);
               else tokenElements.current.delete(tokenId);
-            }}
-            className={`token${canMove ? ' movable' : ''}${isCaptured ? ' captured' : ''}${isKiller ? ' killer' : ''}${isHoming ? ' homing' : ''}${isWinner ? ' winner-token' : ''}`}
-            style={{
-              transform: `translate(${isCaptured ? kill.x : heldCapture ? heldCapture.x : t.x}px, ${isCaptured ? kill.y : heldCapture ? heldCapture.y : t.y}px)`,
-              ...(isCaptured && {
-                '--home-dx': `${kill.homeDx}px`,
-                '--home-dy': `${kill.homeDy}px`,
-                '--mid-dx': `${kill.midDx}px`,
-                '--mid-dy': `${kill.midDy}px`,
-              }),
             }}
             onClick={canMove ? () => {
               const options = diceOptions.filter((option) => option.moves.includes(t.idx));
@@ -453,14 +466,7 @@ export default function Board({
               }
               else if (options.length === 1) onMove(t.idx, options[0].id);
             } : undefined}
-          >
-            {canMove && <circle r={0.7} fill="transparent" />}
-            {canMove && (
-              <circle className="ring" r={r + 0.17} fill="none" stroke="#111" strokeWidth="0.1" />
-            )}
-            <circle r={r} fill={COLORS[t.color]} stroke="#1f2937" strokeWidth="0.07" />
-            <circle r={r * 0.45} fill="rgba(255,255,255,0.4)" />
-          </g>
+          />
         );
       })}
       {choiceToken && movable.includes(choiceToken.idx) && choiceOptions.length > 0 && (() => {
