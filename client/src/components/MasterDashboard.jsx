@@ -49,6 +49,8 @@ function MasterDashboard({ token, onBack }) {
   const [userLoginId, setUserLoginId] = useState('');
   const [userPhone, setUserPhone] = useState('');
   const [userPassword, setUserPassword] = useState('');
+  const [generateUserPassword, setGenerateUserPassword] = useState(false);
+  const [temporaryCredential, setTemporaryCredential] = useState(null);
   const [userStatus, setUserStatus] = useState('ACTIVE');
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
@@ -150,11 +152,13 @@ function MasterDashboard({ token, onBack }) {
   const matchCountToday = stats?.matchesToday || 0;
 
   const openDialog = (action, user = null, request = null, decision = null) => {
+    setTemporaryCredential(null);
     setDialog({ action, userId: user?.id || null, requestId: request?.id || null, requestType: request?.type || null, decision });
     setUserName(action === 'edit-user' ? user?.name || '' : '');
     setUserLoginId(action === 'edit-user' ? user?.loginId || '' : '');
     setUserPhone(action === 'edit-user' ? user?.phone || '' : '');
-    setUserPassword('');
+    setUserPassword(action === 'edit-user' ? user?.password || '' : '');
+    setGenerateUserPassword(false);
     setUserStatus(action === 'edit-user' ? user?.status?.toUpperCase() || 'ACTIVE' : 'ACTIVE');
     setAmount('');
     setReason('');
@@ -180,16 +184,28 @@ function MasterDashboard({ token, onBack }) {
           body: {
             name: userName,
             loginId: userLoginId,
-            password: userPassword,
+            ...(generateUserPassword
+              ? { generateTemporaryPassword: true }
+              : { password: userPassword }),
             phone: userPhone,
             status: userStatus,
             startingDeposit: Number(amount || 0),
             note: reason,
           },
         });
+        if (created.temporaryPassword) {
+          setTemporaryCredential({
+            name: created.name,
+            loginId: created.loginId,
+            password: created.temporaryPassword,
+          });
+        }
         setNotice(`${created.name} created successfully.`);
       } else if (dialog.action === 'edit-user') {
-        await masterRequest(`/users/${dialog.userId}`, {
+        const originalPassword = users.find((item) => item.id === dialog.userId)?.password || '';
+        const passwordChanged = generateUserPassword
+          || (userPassword && userPassword !== originalPassword);
+        const updated = await masterRequest(`/users/${dialog.userId}`, {
           token,
           method: 'PATCH',
           body: {
@@ -197,10 +213,19 @@ function MasterDashboard({ token, onBack }) {
             loginId: userLoginId,
             phone: userPhone,
             status: userStatus,
-            ...(userPassword ? { password: userPassword } : {}),
+            ...(generateUserPassword
+              ? { generateTemporaryPassword: true }
+              : passwordChanged ? { password: userPassword } : {}),
           },
         });
-        setNotice(`${userName} updated successfully${userPassword ? ' with a password reset' : ''}.`);
+        if (updated.temporaryPassword) {
+          setTemporaryCredential({
+            name: userName,
+            loginId: userLoginId,
+            password: updated.temporaryPassword,
+          });
+        }
+        setNotice(`${userName} updated successfully${passwordChanged ? ' with a password reset' : ''}.`);
       } else if (dialog.action === 'withdraw-request') {
         await masterRequest('/withdrawals', {
           token,
@@ -422,6 +447,28 @@ function MasterDashboard({ token, onBack }) {
         </div>
       </section>
 
+      {temporaryCredential && (
+        <div className="md-dialog-backdrop">
+          <section className="md-dialog" role="dialog" aria-modal="true" aria-labelledby="md-temp-password-title">
+            <h2 id="md-temp-password-title">Temporary password</h2>
+            <p>Share this password securely with {temporaryCredential.name}. It will only be shown once.</p>
+            <p><strong>Login ID:</strong> {temporaryCredential.loginId}</p>
+            <label>Temporary password<input type="text" readOnly value={temporaryCredential.password} /></label>
+            <div className="md-dialog-actions">
+              <button type="button" onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(temporaryCredential.password);
+                  setNotice('Temporary password copied. Share it securely.');
+                } catch {
+                  setNotice('Could not copy the password. Select and copy it manually.');
+                }
+              }}>Copy password</button>
+              <button type="button" onClick={() => setTemporaryCredential(null)}>Done</button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {dialog && (
         <div className="md-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDialog(); }}>
           <form className="md-dialog" onSubmit={submitDialog} aria-labelledby="md-dialog-title">
@@ -437,7 +484,7 @@ function MasterDashboard({ token, onBack }) {
             {dialog.action === 'create-user' || dialog.action === 'edit-user' ? <div className="md-fields">
               <label>Name<input value={userName} onChange={(event) => setUserName(event.target.value)} required maxLength={100} autoFocus /></label>
               <label>Login ID or email<input value={userLoginId} onChange={(event) => setUserLoginId(event.target.value)} required maxLength={50} /></label>
-              <label>{dialog.action === 'create-user' ? 'Password' : 'New password (optional)'}<input type="password" value={userPassword} onChange={(event) => setUserPassword(event.target.value)} required={dialog.action === 'create-user'} minLength={8} maxLength={200} autoComplete="new-password" placeholder={dialog.action === 'edit-user' ? 'Leave blank to keep current password' : ''} /></label>
+              <label>Password<input type={dialog.action === 'edit-user' ? 'text' : 'password'} value={userPassword} onChange={(event) => { setUserPassword(event.target.value); setGenerateUserPassword(false); }} required={dialog.action === 'create-user' && !generateUserPassword} disabled={generateUserPassword} minLength={8} maxLength={200} autoComplete="new-password" placeholder={dialog.action === 'edit-user' ? 'Current password' : ''} /></label>
               <label>Phone (optional)<input value={userPhone} onChange={(event) => setUserPhone(event.target.value)} maxLength={30} /></label>
               <label>Account status<select value={userStatus} onChange={(event) => setUserStatus(event.target.value)}><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select></label>
               {dialog.action === 'create-user' && <label>Starting deposit (optional)<input type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>}

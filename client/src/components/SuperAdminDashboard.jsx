@@ -33,6 +33,7 @@ function SuperAdminDashboard({ token, onSignOut }) {
   const [dialog, setDialog] = useState(null);
   const [search, setSearch] = useState('');
   const [form, setForm] = useState({});
+  const [temporaryCredential, setTemporaryCredential] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -100,6 +101,7 @@ function SuperAdminDashboard({ token, onSignOut }) {
   const dialogMaster = dialog?.masterId ? masters.find((master) => master.id === dialog.masterId) : null;
 
   const openDialog = (action, master = null, request = null, decision = null) => {
+    setTemporaryCredential(null);
     setDialog({ action, masterId: master?.id || request?.masterId || null, requestId: request?.id || null, decision });
     setForm({
       name: master?.name || '',
@@ -108,7 +110,8 @@ function SuperAdminDashboard({ token, onSignOut }) {
       startingBalance: '',
       amount: '',
       reason: '',
-      password: '',
+      password: action === 'edit-master' ? master?.password || '' : '',
+      generateTemporaryPassword: false,
     });
     setError('');
   };
@@ -136,31 +139,51 @@ function SuperAdminDashboard({ token, onSignOut }) {
 
     try {
       if (dialog.action === 'create-master') {
-        await adminRequest('/masters', {
+        const created = await adminRequest('/masters', {
           token,
           method: 'POST',
           body: {
             name: form.name,
             loginId: form.loginId,
-            password: form.password,
+            ...(form.generateTemporaryPassword
+              ? { generateTemporaryPassword: true }
+              : { password: form.password }),
             phone: form.phone,
             startingBalance: form.startingBalance || 0,
             reason: form.reason || 'Starting balance',
           },
         });
+        if (created.temporaryPassword) {
+          setTemporaryCredential({
+            name: created.name,
+            loginId: created.loginId,
+            password: created.temporaryPassword,
+          });
+        }
         setNotice('Master created.');
       } else if (dialog.action === 'edit-master') {
-        await adminRequest(`/masters/${dialogMaster.id}`, {
+        const passwordChanged = form.generateTemporaryPassword
+          || (form.password && form.password !== (dialogMaster?.password || ''));
+        const updated = await adminRequest(`/masters/${dialogMaster.id}`, {
           token,
           method: 'PATCH',
           body: {
             name: form.name,
             loginId: form.loginId,
             phone: form.phone,
-            ...(form.password ? { password: form.password } : {}),
+            ...(form.generateTemporaryPassword
+              ? { generateTemporaryPassword: true }
+              : passwordChanged ? { password: form.password } : {}),
           },
         });
-        setNotice(`Master details saved${form.password ? ' with a password reset' : ''}.`);
+        if (updated.temporaryPassword) {
+          setTemporaryCredential({
+            name: form.name,
+            loginId: form.loginId,
+            password: updated.temporaryPassword,
+          });
+        }
+        setNotice(`Master details saved${passwordChanged ? ' with a password reset' : ''}.`);
       } else if (dialog.action === 'resolve-request') {
         await adminRequest(`/withdrawals/${dialog.requestId}`, {
           token,
@@ -343,6 +366,28 @@ function SuperAdminDashboard({ token, onSignOut }) {
         </div>
       </section>
 
+      {temporaryCredential && (
+        <div className="sa-form-backdrop">
+          <section className="sa-form" role="dialog" aria-modal="true" aria-labelledby="sa-temp-password-title">
+            <h2 id="sa-temp-password-title">Temporary password</h2>
+            <p>Share this password securely with {temporaryCredential.name}. It will only be shown once.</p>
+            <p><strong>Login ID:</strong> {temporaryCredential.loginId}</p>
+            <label>Temporary password<input type="text" readOnly value={temporaryCredential.password} /></label>
+            <div className="sa-form-actions">
+              <button type="button" onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(temporaryCredential.password);
+                  setNotice('Temporary password copied. Share it securely.');
+                } catch {
+                  setNotice('Could not copy the password. Select and copy it manually.');
+                }
+              }}>Copy password</button>
+              <button type="button" onClick={() => setTemporaryCredential(null)}>Done</button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {dialog && (
         <div className="sa-form-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDialog(); }}>
           <form className="sa-form" onSubmit={submitDialog} aria-labelledby="sa-form-title">
@@ -358,7 +403,7 @@ function SuperAdminDashboard({ token, onSignOut }) {
               <div className="sa-form-fields">
                 <label>Name<input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} maxLength={70} required autoFocus /></label>
                 <label>Login ID<input value={form.loginId} onChange={(event) => setForm((current) => ({ ...current, loginId: event.target.value }))} maxLength={50} required /></label>
-                <label>{dialog.action === 'create-master' ? 'Password' : 'New password (optional)'}<input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} required={dialog.action === 'create-master'} minLength={8} maxLength={200} autoComplete="new-password" placeholder={dialog.action === 'edit-master' ? 'Leave blank to keep current password' : ''} /></label>
+                <label>{dialog.action === 'create-master' ? 'Password' : 'Password'}<input type={dialog.action === 'edit-master' ? 'text' : 'password'} value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value, generateTemporaryPassword: false }))} required={dialog.action === 'create-master' && !form.generateTemporaryPassword} disabled={form.generateTemporaryPassword} minLength={8} maxLength={200} autoComplete="new-password" placeholder={dialog.action === 'edit-master' ? 'Current password' : ''} /></label>
                 <label>Phone (optional)<input value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} maxLength={30} /></label>
                 {dialog.action === 'create-master' && <label>Starting balance<input type="number" min="0" step="0.01" value={form.startingBalance} onChange={(event) => setForm((current) => ({ ...current, startingBalance: event.target.value }))} /></label>}
                 {dialog.action === 'create-master' && <label>Reason / note<input value={form.reason} onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))} placeholder="Optional opening balance note" /></label>}
