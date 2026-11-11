@@ -211,7 +211,7 @@ async function postUsers(req, res, next) {
     const validLoginId = /^[a-z0-9._-]{3,50}$/.test(loginId)
       || /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(loginId);
     if (!validLoginId) throw new HttpError(400, 'Enter a valid Login ID or email address.');
-    if (password.length < 12) throw new HttpError(400, 'User password must be at least 12 characters.');
+    if (password.length < 8) throw new HttpError(400, 'User password must be at least 8 characters.');
     if (!['ACTIVE', 'INACTIVE'].includes(status)) throw new HttpError(400, 'New users can be Active or Inactive.');
     const passwordHash = await bcrypt.hash(password, 12);
 
