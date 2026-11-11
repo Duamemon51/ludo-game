@@ -1,10 +1,10 @@
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { randomUUID } = require('node:crypto');
+const { randomBytes, randomUUID } = require('node:crypto');
 const { pool, transaction } = require('../db/pool');
 
 const MAX_AMOUNT = 999999999999.99;
 const STATUS_LABELS = { ACTIVE: 'Active', INACTIVE: 'Inactive', BLOCKED: 'Blocked' };
+const createTemporaryPassword = () => randomBytes(24).toString('base64url');
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -169,6 +169,7 @@ async function getUsers(req, res, next) {
   try {
     const [rows] = await pool.execute(
       `SELECT a.id, a.display_name, a.login_id, a.phone, a.status, a.status_before_block, a.created_at,
+        a.password_hash,
         COALESCE(w.balance, 0) AS balance,
         (SELECT MAX(m.started_at) FROM match_players mp
           JOIN matches m ON m.id = mp.match_id WHERE mp.player_id = a.id) AS last_played,
@@ -186,6 +187,7 @@ async function getUsers(req, res, next) {
       name: row.display_name,
       loginId: row.login_id,
       phone: row.phone || '',
+      password: row.password_hash || '',
       status: STATUS_LABELS[row.status],
       statusBeforeBlock: row.status === 'BLOCKED' ? STATUS_LABELS[row.status_before_block || 'ACTIVE'] : undefined,
       wallet: Number(row.balance),
@@ -203,7 +205,10 @@ async function postUsers(req, res, next) {
   try {
     const name = text(req.body?.name, 'Name', 100);
     const loginId = text(req.body?.loginId, 'Login ID', 50).toLowerCase();
-    const password = text(req.body?.password, 'Password', 200);
+    const generateTemporaryPassword = req.body?.generateTemporaryPassword === true;
+    const password = generateTemporaryPassword
+      ? createTemporaryPassword()
+      : text(req.body?.password, 'Password', 200);
     const phone = text(req.body?.phone || '', 'Phone', 30, false);
     const status = String(req.body?.status || 'ACTIVE').toUpperCase();
     const startingDeposit = amount(req.body?.startingDeposit || 0, 'Starting deposit', true);
@@ -213,7 +218,6 @@ async function postUsers(req, res, next) {
     if (!validLoginId) throw new HttpError(400, 'Enter a valid Login ID or email address.');
     if (password.length < 8) throw new HttpError(400, 'User password must be at least 8 characters.');
     if (!['ACTIVE', 'INACTIVE'].includes(status)) throw new HttpError(400, 'New users can be Active or Inactive.');
-    const passwordHash = await bcrypt.hash(password, 12);
 
     const user = await transaction(async (connection) => {
       const [[masterWallet]] = await connection.execute(
@@ -226,7 +230,7 @@ async function postUsers(req, res, next) {
       const [created] = await connection.execute(
         `INSERT INTO accounts (login_id, display_name, phone, password_hash, role, status, master_id)
          VALUES (?, ?, ?, ?, 'PLAYER', ?, ?)`,
-        [loginId, name, phone || null, passwordHash, status, req.master.id]
+        [loginId, name, phone || null, password, status, req.master.id]
       );
       const userId = created.insertId;
       await connection.execute('INSERT INTO wallets (account_id, balance) VALUES (?, ?)', [userId, startingDeposit]);
@@ -254,7 +258,11 @@ async function postUsers(req, res, next) {
         createdAt: dateLabel(new Date()),
       };
     });
-    res.status(201).json(user);
+    if (generateTemporaryPassword) res.set('Cache-Control', 'no-store');
+    res.status(201).json({
+      ...user,
+      ...(generateTemporaryPassword ? { temporaryPassword: password } : {}),
+    });
   } catch (error) {
     if (error.code === 'ER_DUP_ENTRY') return next(new HttpError(409, 'That Login ID is already in use.'));
     next(error);
@@ -265,6 +273,7 @@ async function getUsersById(req, res, next) {
   try {
     const [rows] = await pool.execute(
       `SELECT a.id, a.display_name, a.login_id, a.phone, a.status, a.status_before_block,
+        a.password_hash,
         COALESCE(w.balance, 0) AS balance
        FROM accounts a LEFT JOIN wallets w ON w.account_id = a.id
        WHERE a.id = ? AND a.master_id = ? AND a.role = 'PLAYER' LIMIT 1`,
@@ -295,6 +304,7 @@ async function getUsersById(req, res, next) {
       name: user.display_name,
       loginId: user.login_id,
       phone: user.phone || '',
+      password: user.password_hash || '',
       status: STATUS_LABELS[user.status],
       statusBeforeBlock: user.status === 'BLOCKED' ? STATUS_LABELS[user.status_before_block || 'ACTIVE'] : undefined,
       wallet: Number(user.balance),
@@ -328,7 +338,8 @@ async function patchUsersById(req, res, next) {
     const name = text(req.body?.name, 'Name', 100);
     const loginId = text(req.body?.loginId, 'Login ID', 50).toLowerCase();
     const phone = text(req.body?.phone || '', 'Phone', 30, false);
-    const password = req.body?.password;
+    const generateTemporaryPassword = req.body?.generateTemporaryPassword === true;
+    const password = generateTemporaryPassword ? createTemporaryPassword() : req.body?.password;
     const status = String(req.body?.status || '').toUpperCase();
     const validLoginId = /^[a-z0-9._-]{3,50}$/.test(loginId)
       || /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(loginId);
@@ -339,7 +350,6 @@ async function patchUsersById(req, res, next) {
     )) {
       throw new HttpError(400, 'New password must be between 8 and 200 characters.');
     }
-    const passwordHash = password ? await bcrypt.hash(password, 12) : null;
     await transaction(async (connection) => {
       const [rows] = await connection.execute(
         `SELECT id FROM accounts WHERE id = ? AND master_id = ? AND role = 'PLAYER' FOR UPDATE`,
@@ -352,9 +362,9 @@ async function patchUsersById(req, res, next) {
         [req.params.id]
       );
       if (playing.active) throw new HttpError(409, 'This user is in a live match. Try again after it finishes.');
-      const passwordUpdate = passwordHash ? ', password_hash = ?' : '';
+      const passwordUpdate = password ? ', password_hash = ?' : '';
       const params = [name, loginId, phone || null, status];
-      if (passwordHash) params.push(passwordHash);
+      if (password) params.push(password);
       params.push(req.params.id, req.master.id);
       await connection.execute(
         `UPDATE accounts SET display_name = ?, login_id = ?, phone = ?, status = ?,
@@ -368,10 +378,15 @@ async function patchUsersById(req, res, next) {
         'USER_UPDATED',
         'PLAYER',
         req.params.id,
-        `Status: ${status}; Login ID: ${loginId}${passwordHash ? '; password reset' : ''}`
+        `Status: ${status}; Login ID: ${loginId}${password ? '; password reset' : ''}`
       );
     });
-    res.json({ ok: true, status: STATUS_LABELS[status] });
+    if (generateTemporaryPassword) res.set('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      status: STATUS_LABELS[status],
+      ...(generateTemporaryPassword ? { temporaryPassword: password } : {}),
+    });
   } catch (error) {
     if (error.code === 'ER_DUP_ENTRY') return next(new HttpError(409, 'That Login ID is already in use.'));
     next(error);
