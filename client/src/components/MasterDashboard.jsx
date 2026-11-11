@@ -192,9 +192,15 @@ function MasterDashboard({ token, onBack }) {
         await masterRequest(`/users/${dialog.userId}`, {
           token,
           method: 'PATCH',
-          body: { name: userName, loginId: userLoginId, phone: userPhone, status: userStatus },
+          body: {
+            name: userName,
+            loginId: userLoginId,
+            phone: userPhone,
+            status: userStatus,
+            ...(userPassword ? { password: userPassword } : {}),
+          },
         });
-        setNotice(`${userName} updated successfully.`);
+        setNotice(`${userName} updated successfully${userPassword ? ' with a password reset' : ''}.`);
       } else if (dialog.action === 'withdraw-request') {
         await masterRequest('/withdrawals', {
           token,
@@ -431,7 +437,7 @@ function MasterDashboard({ token, onBack }) {
             {dialog.action === 'create-user' || dialog.action === 'edit-user' ? <div className="md-fields">
               <label>Name<input value={userName} onChange={(event) => setUserName(event.target.value)} required maxLength={100} autoFocus /></label>
               <label>Login ID or email<input value={userLoginId} onChange={(event) => setUserLoginId(event.target.value)} required maxLength={50} /></label>
-              {dialog.action === 'create-user' && <label>Password<input type="password" value={userPassword} onChange={(event) => setUserPassword(event.target.value)} required minLength={8} maxLength={200} autoComplete="new-password" /></label>}
+              <label>{dialog.action === 'create-user' ? 'Password' : 'New password (optional)'}<input type="password" value={userPassword} onChange={(event) => setUserPassword(event.target.value)} required={dialog.action === 'create-user'} minLength={8} maxLength={200} autoComplete="new-password" placeholder={dialog.action === 'edit-user' ? 'Leave blank to keep current password' : ''} /></label>
               <label>Phone (optional)<input value={userPhone} onChange={(event) => setUserPhone(event.target.value)} maxLength={30} /></label>
               <label>Account status<select value={userStatus} onChange={(event) => setUserStatus(event.target.value)}><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select></label>
               {dialog.action === 'create-user' && <label>Starting deposit (optional)<input type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>}

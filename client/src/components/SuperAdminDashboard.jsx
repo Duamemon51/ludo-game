@@ -153,9 +153,14 @@ function SuperAdminDashboard({ token, onSignOut }) {
         await adminRequest(`/masters/${dialogMaster.id}`, {
           token,
           method: 'PATCH',
-          body: { name: form.name, loginId: form.loginId, phone: form.phone },
+          body: {
+            name: form.name,
+            loginId: form.loginId,
+            phone: form.phone,
+            ...(form.password ? { password: form.password } : {}),
+          },
         });
-        setNotice('Master details saved.');
+        setNotice(`Master details saved${form.password ? ' with a password reset' : ''}.`);
       } else if (dialog.action === 'resolve-request') {
         await adminRequest(`/withdrawals/${dialog.requestId}`, {
           token,
@@ -353,7 +358,7 @@ function SuperAdminDashboard({ token, onSignOut }) {
               <div className="sa-form-fields">
                 <label>Name<input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} maxLength={70} required autoFocus /></label>
                 <label>Login ID<input value={form.loginId} onChange={(event) => setForm((current) => ({ ...current, loginId: event.target.value }))} maxLength={50} required /></label>
-                {dialog.action === 'create-master' && <label>Password<input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} required minLength={8} maxLength={200} autoComplete="new-password" /></label>}
+                <label>{dialog.action === 'create-master' ? 'Password' : 'New password (optional)'}<input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} required={dialog.action === 'create-master'} minLength={8} maxLength={200} autoComplete="new-password" placeholder={dialog.action === 'edit-master' ? 'Leave blank to keep current password' : ''} /></label>
                 <label>Phone (optional)<input value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} maxLength={30} /></label>
                 {dialog.action === 'create-master' && <label>Starting balance<input type="number" min="0" step="0.01" value={form.startingBalance} onChange={(event) => setForm((current) => ({ ...current, startingBalance: event.target.value }))} /></label>}
                 {dialog.action === 'create-master' && <label>Reason / note<input value={form.reason} onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))} placeholder="Optional opening balance note" /></label>}

@@ -44,6 +44,7 @@ const Yard = ({ pos, c, d }) => (
 export default function LoginScreen({ onSignIn, loading = false, error = '' }) {
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   return (
     <main className="ls">
@@ -141,14 +142,18 @@ export default function LoginScreen({ onSignIn, loading = false, error = '' }) {
         .ls-field { display: flex; flex-direction: column; gap: 6px; }
         .ls-field label { font-size: 14px; font-weight: 700; }
         .ls-inp { position: relative; }
-        .ls-inp svg { position: absolute; left: 14px; top: 50%; width: 21px; height: 21px; transform: translateY(-50%); color: #8a55f0; pointer-events: none; }
+        .ls-inp > svg { position: absolute; left: 14px; top: 50%; width: 21px; height: 21px; transform: translateY(-50%); color: #8a55f0; pointer-events: none; }
         .ls-field input {
-          width: 100%; padding-left: 44px !important; min-height: 48px; padding: 0 14px; font: inherit; font-weight: 700; font-size: 16px; color: var(--ink);
+          width: 100%; padding-left: 44px !important; min-height: 48px; padding: 0 44px 0 14px; font: inherit; font-weight: 700; font-size: 16px; color: var(--ink);
           background: linear-gradient(180deg, #f4e6c1, #fff9e6); border: 0; border-radius: 14px; outline: none;
           box-shadow: inset 0 3px 6px rgba(70,40,0,.4), inset 0 0 0 2px #d6bd85, 0 2px 0 rgba(255,255,255,.8);
         }
         .ls-field input::placeholder { color: #b49c70; font-weight: 500; }
         .ls-field input:focus { box-shadow: inset 0 3px 6px rgba(70,40,0,.35), inset 0 0 0 3px var(--focus), 0 2px 0 rgba(255,255,255,.8); }
+        .ls-password-toggle { position: absolute; top: 50%; right: 12px; display: grid; width: 28px; height: 28px; place-items: center; padding: 0; border: 0; border-radius: 8px; color: #8a55f0; background: transparent; transform: translateY(-50%); cursor: pointer; }
+        .ls-password-toggle:hover { color: #5a1b63; background: #8a55f01a; }
+        .ls-password-toggle:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+        .ls-password-toggle svg { width: 20px; height: 20px; }
 
         /* buttons */
         .ls-btn {
@@ -224,9 +229,33 @@ export default function LoginScreen({ onSignIn, loading = false, error = '' }) {
           </div>
           <div className="ls-field">
             <label htmlFor="login-password">Password</label>
-            <div className="ls-inp">{LockIcon}<input id="login-password" type="password" autoComplete="current-password"
+            <div className="ls-inp">{LockIcon}<input id="login-password" type={showPassword ? 'text' : 'password'} autoComplete="current-password"
               placeholder="Enter your password"
-              value={password} onChange={(event) => setPassword(event.target.value)} required /></div>
+              value={password} onChange={(event) => setPassword(event.target.value)} required />
+              <button
+                type="button"
+                className="ls-password-toggle"
+                onClick={() => setShowPassword((visible) => !visible)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showPassword}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  {showPassword ? (
+                    <>
+                      <path d="M3 3l18 18" />
+                      <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" />
+                      <path d="M9.9 5.2A10.8 10.8 0 0 1 12 5c5.5 0 9 7 9 7a15.7 15.7 0 0 1-3.1 3.8" />
+                      <path d="M6.2 6.2C3.9 7.7 3 12 3 12s3.5 7 9 7a10.8 10.8 0 0 0 4-.8" />
+                    </>
+                  ) : (
+                    <>
+                      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </>
+                  )}
+                </svg>
+              </button>
+            </div>
           </div>
 
           {error && <p className="ls-note" role="alert">{error}</p>}
