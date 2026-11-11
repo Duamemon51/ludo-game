@@ -328,11 +328,18 @@ async function patchUsersById(req, res, next) {
     const name = text(req.body?.name, 'Name', 100);
     const loginId = text(req.body?.loginId, 'Login ID', 50).toLowerCase();
     const phone = text(req.body?.phone || '', 'Phone', 30, false);
+    const password = req.body?.password;
     const status = String(req.body?.status || '').toUpperCase();
     const validLoginId = /^[a-z0-9._-]{3,50}$/.test(loginId)
       || /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(loginId);
     if (!validLoginId) throw new HttpError(400, 'Enter a valid Login ID or email address.');
     if (!['ACTIVE', 'INACTIVE'].includes(status)) throw new HttpError(400, 'Users can be Active or Inactive.');
+    if (password !== undefined && password !== '' && (
+      typeof password !== 'string' || password.length < 8 || password.length > 200
+    )) {
+      throw new HttpError(400, 'New password must be between 8 and 200 characters.');
+    }
+    const passwordHash = password ? await bcrypt.hash(password, 12) : null;
     await transaction(async (connection) => {
       const [rows] = await connection.execute(
         `SELECT id FROM accounts WHERE id = ? AND master_id = ? AND role = 'PLAYER' FOR UPDATE`,
@@ -345,12 +352,24 @@ async function patchUsersById(req, res, next) {
         [req.params.id]
       );
       if (playing.active) throw new HttpError(409, 'This user is in a live match. Try again after it finishes.');
+      const passwordUpdate = passwordHash ? ', password_hash = ?' : '';
+      const params = [name, loginId, phone || null, status];
+      if (passwordHash) params.push(passwordHash);
+      params.push(req.params.id, req.master.id);
       await connection.execute(
         `UPDATE accounts SET display_name = ?, login_id = ?, phone = ?, status = ?,
-          status_before_block = NULL WHERE id = ? AND master_id = ? AND role = 'PLAYER'`,
-        [name, loginId, phone || null, status, req.params.id, req.master.id]
+          status_before_block = NULL${passwordUpdate} WHERE id = ? AND master_id = ? AND role = 'PLAYER'`,
+        params
       );
-      await audit(connection, req, req.master.id, 'USER_UPDATED', 'PLAYER', req.params.id, `Status: ${status}; Login ID: ${loginId}`);
+      await audit(
+        connection,
+        req,
+        req.master.id,
+        'USER_UPDATED',
+        'PLAYER',
+        req.params.id,
+        `Status: ${status}; Login ID: ${loginId}${passwordHash ? '; password reset' : ''}`
+      );
     });
     res.json({ ok: true, status: STATUS_LABELS[status] });
   } catch (error) {

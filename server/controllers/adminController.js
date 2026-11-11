@@ -292,16 +292,35 @@ async function patchMastersById(req, res, next) {
     const name = text(req.body?.name, 'Name', 100);
     const loginId = text(req.body?.loginId, 'Login ID', 50).toLowerCase();
     const phone = text(req.body?.phone || '', 'Phone', 30, false);
+    const password = req.body?.password;
     if (!/^[a-z0-9._-]{3,50}$/.test(loginId)) {
       throw new HttpError(400, 'Invalid login ID format.');
     }
+    if (password !== undefined && password !== '' && (
+      typeof password !== 'string' || password.length < 8 || password.length > 200
+    )) {
+      throw new HttpError(400, 'New password must be between 8 and 200 characters.');
+    }
+    const passwordHash = password ? await bcrypt.hash(password, 12) : null;
+    const passwordUpdate = passwordHash ? ', password_hash = ?' : '';
+    const params = [name, loginId, phone || null];
+    if (passwordHash) params.push(passwordHash);
+    params.push(req.params.id);
     const [result] = await pool.execute(
-      `UPDATE accounts SET display_name = ?, login_id = ?, phone = ?
+      `UPDATE accounts SET display_name = ?, login_id = ?, phone = ?${passwordUpdate}
        WHERE id = ? AND role = 'MASTER'`,
-      [name, loginId, phone || null, req.params.id]
+      params
     );
     if (!result.affectedRows) throw new HttpError(404, 'Master not found.');
-    await audit(pool, req, req.admin.id, 'MASTER_UPDATED', 'MASTER', req.params.id, `Updated master profile; login ID: ${loginId}`);
+    await audit(
+      pool,
+      req,
+      req.admin.id,
+      'MASTER_UPDATED',
+      'MASTER',
+      req.params.id,
+      `Updated master profile; login ID: ${loginId}${passwordHash ? '; password reset' : ''}`
+    );
     res.json({ ok: true });
   } catch (error) {
     if (error.code === 'ER_DUP_ENTRY') return next(new HttpError(409, 'That login ID is already in use.'));
