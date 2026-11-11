@@ -192,7 +192,7 @@ async function postMasters(req, res, next) {
     if (loginId.length < 3 || !/^[a-z0-9._-]+$/.test(loginId)) {
       throw new HttpError(400, 'Login ID must be 3–50 characters using letters, numbers, dots, underscores or hyphens.');
     }
-    if (password.length < 12) throw new HttpError(400, 'Master password must be at least 12 characters.');
+    if (password.length < 8) throw new HttpError(400, 'Master password must be at least 8 characters.');
 
     const passwordHash = await bcrypt.hash(password, 12);
     const master = await transaction(async (connection) => {
