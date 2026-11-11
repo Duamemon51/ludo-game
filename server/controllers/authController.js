@@ -1,11 +1,9 @@
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { ipKeyGenerator, rateLimit } = require('express-rate-limit');
-const { randomUUID } = require('node:crypto');
+const { timingSafeEqual } = require('node:crypto');
 const { pool } = require('../db/pool');
 
 const LOGIN_FAILURE = 'Invalid login ID or password.';
-const dummyHashPromise = bcrypt.hash(`invalid-${randomUUID()}`, 10);
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -37,6 +35,15 @@ function requireJwtSecret() {
   return secret;
 }
 
+// Plaintext comparison (constant-time so response timing does not leak matches).
+function passwordMatches(input, stored) {
+  if (typeof stored !== 'string' || !stored.length) return false;
+  const a = Buffer.from(input);
+  const b = Buffer.from(stored);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
 async function postLogin(req, res, next) {
   try {
     const loginId = typeof req.body?.loginId === 'string'
@@ -56,7 +63,7 @@ async function postLogin(req, res, next) {
       [loginId]
     );
     const account = rows[0];
-    const validPassword = await bcrypt.compare(password, account?.password_hash || await dummyHashPromise);
+    const validPassword = passwordMatches(password, account?.password_hash);
     const canSignIn = account
       && validPassword
       && account.status !== 'BLOCKED'
