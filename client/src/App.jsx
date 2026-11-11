@@ -611,10 +611,8 @@ export default function App() {
           onNameChange={setName}
           onAvatarChange={setPlayerAvatar}
           onFindMatch={findMatch}
-          token={authSession.token}
+          token={authSession?.token}
           onSignOut={signOut}
-          soundMuted={soundMuted}
-          onToggleMute={toggleSound}
           connected={connected}
         />
       )}

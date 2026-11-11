@@ -431,7 +431,7 @@ function MasterDashboard({ token, onBack }) {
             {dialog.action === 'create-user' || dialog.action === 'edit-user' ? <div className="md-fields">
               <label>Name<input value={userName} onChange={(event) => setUserName(event.target.value)} required maxLength={100} autoFocus /></label>
               <label>Login ID or email<input value={userLoginId} onChange={(event) => setUserLoginId(event.target.value)} required maxLength={50} /></label>
-              {dialog.action === 'create-user' && <label>Password<input type="password" value={userPassword} onChange={(event) => setUserPassword(event.target.value)} required minLength={12} maxLength={200} autoComplete="new-password" /></label>}
+              {dialog.action === 'create-user' && <label>Password<input type="password" value={userPassword} onChange={(event) => setUserPassword(event.target.value)} required minLength={8} maxLength={200} autoComplete="new-password" /></label>}
               <label>Phone (optional)<input value={userPhone} onChange={(event) => setUserPhone(event.target.value)} maxLength={30} /></label>
               <label>Account status<select value={userStatus} onChange={(event) => setUserStatus(event.target.value)}><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select></label>
               {dialog.action === 'create-user' && <label>Starting deposit (optional)<input type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>}

@@ -128,7 +128,7 @@ function resizeImage(file, size) {
 }
 
 export default function PlayerHome({
-  name, onNameChange, onAvatarChange, onFindMatch, token, onSignOut, soundMuted = false, onToggleMute, connected = true,
+  name, onNameChange, onAvatarChange, onFindMatch, token, onSignOut, connected = true,
 }) {
   const [page, setPage] = useState('home');
   const [bet, setBet] = useState(300);
@@ -438,7 +438,6 @@ export default function PlayerHome({
         .ph-wallet:active { transform: scale(.97); }
         .ph-menu-btn { display: none; width: 44px; height: 44px; border: 0; border-radius: 50%; place-items: center; color: #ffd269; background: linear-gradient(180deg, #6b3a17f2, #43230fe6); box-shadow: inset 0 0 0 1.5px #fcc419b3, 0 4px 10px #0006; }
         .ph-menu-btn:active { transform: scale(.94); }
-        .ph-sound-toggle { display: none; }
         .ph-layout { position: relative; z-index: 1; flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px); align-items: center; gap: clamp(24px, 5vw, 76px); padding: 18px clamp(20px, 7vw, 110px) 30px; }
         .ph-layout-detail { grid-template-columns: minmax(0, 1fr); }
         .ph-layout-detail .ph-hero { display: none; }
@@ -992,27 +991,6 @@ export default function PlayerHome({
         .ph-xp-track i { position: absolute; top: 0; bottom: 0; left: 0; border-radius: inherit; background: linear-gradient(180deg, #ffe27a, #fcc419 55%, #e0a000); }
         .ph-xp-track b { position: relative; z-index: 1; padding-left: 8px; color: #fff; font-family: 'Lilita One', sans-serif; font-size: 11px; font-weight: 400; text-shadow: 0 1px 1px #000c; }
         .ph-wallet { min-width: 132px; }
-        @media (max-width: 600px) {
-          .ph-header { z-index: 20; }
-          .ph-sound-toggle {
-            position: absolute;
-            top: calc(100% + 12px);
-            right: 14px;
-            z-index: 3;
-            display: grid;
-            place-items: center;
-            width: 38px;
-            height: 38px;
-            border: 1px solid #ffffff50;
-            border-radius: 50%;
-            color: #ffe9a8;
-            background: linear-gradient(180deg, #6a2a86, #3d1456);
-            box-shadow: inset 0 0 0 1px #ffffff20, 0 3px 8px #0007;
-          }
-          .ph-sound-toggle:active { transform: scale(.94); }
-          .ph-sound-toggle:focus-visible { outline: 2px solid #fcc419; outline-offset: 3px; }
-          .ph-sound-toggle svg { width: 20px; height: 20px; }
-        }
         @media (max-width: 380px) {
           .ph-brand { padding-right: 10px; }
           .ph-ava-wrap .ph-avatar { width: 42px; height: 42px; font-size: 21px; }
@@ -1054,29 +1032,6 @@ export default function PlayerHome({
             <span className="ph-plus" aria-hidden="true">+</span>
           </button>
         </div>
-        <button
-          type="button"
-          className="ph-sound-toggle"
-          onClick={onToggleMute}
-          aria-label={soundMuted ? 'Unmute sound' : 'Mute sound'}
-          aria-pressed={soundMuted}
-          title={soundMuted ? 'Unmute sound' : 'Mute sound'}
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" />
-            {soundMuted ? (
-              <>
-                <line x1="23" y1="9" x2="17" y2="15" />
-                <line x1="17" y1="9" x2="23" y2="15" />
-              </>
-            ) : (
-              <>
-                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-              </>
-            )}
-          </svg>
-        </button>
       </header>
 
       <div className={`ph-layout${page === 'home' ? '' : ' ph-layout-detail'}`}>
