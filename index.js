@@ -8,6 +8,8 @@ const { Server } = require('socket.io');
 const { pool } = require('./db/pool');
 const { registerHandlers } = require('./socket/rooms');
 
+class SocketAuthError extends Error {}
+
 const app = express();
 const allowedOrigins = (process.env.CLIENT_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173')
   .split(',')
@@ -77,14 +79,14 @@ io.use(async (socket, next) => {
   try {
     const secret = process.env.JWT_SECRET;
     if (!secret || Buffer.byteLength(secret) < 32) {
-      throw new Error('Player authentication is not configured.');
+      throw new SocketAuthError('Player authentication is not configured.');
     }
     const claims = jwt.verify(token, secret, {
       algorithms: ['HS256'],
       issuer: 'ludo-game',
       audience: 'ludo-player',
     });
-    if (claims.role !== 'PLAYER' || !claims.sub) throw new Error('Player access is required.');
+    if (claims.role !== 'PLAYER' || !claims.sub) throw new SocketAuthError('Player access is required.');
 
     const [rows] = await pool.execute(
       `SELECT p.id, p.master_id, p.status, m.status AS master_status
@@ -93,13 +95,23 @@ io.use(async (socket, next) => {
       [claims.sub]
     );
     if (!rows[0] || rows[0].status === 'BLOCKED' || rows[0].master_status === 'BLOCKED') {
-      throw new Error('Player session is no longer valid.');
+      throw new SocketAuthError('Player session is no longer valid.');
     }
     socket.data.playerId = String(rows[0].id);
     socket.data.masterId = String(rows[0].master_id);
+    socket.data.authExpiresAt = claims.exp;
     next();
   } catch (error) {
-    next(new Error(error.message || 'Player authentication failed.'));
+    if (
+      error instanceof SocketAuthError
+      || error instanceof jwt.JsonWebTokenError
+      || error instanceof jwt.NotBeforeError
+    ) {
+      next(new Error(error.message));
+      return;
+    }
+    console.error('Socket player authentication failed:', error);
+    next(new Error('Player authentication could not be completed.'));
   }
 });
 

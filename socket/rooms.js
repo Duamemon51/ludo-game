@@ -207,11 +207,12 @@ function publicState(room, viewerSocketId) {
     roomId: room.id,
     seats: room.seats.map((s) => {
       const takeoverHidden = s.isBot && s.level === 'takeover';
+      const isOwnTakeover = takeoverHidden && s.socketId === viewerSocketId;
       return {
         color: s.color,
-        name: takeoverHidden ? s.baseName : s.name,
-        isBot: takeoverHidden ? s.socketId === viewerSocketId : s.isBot,
-        isTakeover: takeoverHidden && s.socketId === viewerSocketId,
+        name: s.isBot ? s.baseName : s.name,
+        isBot: isOwnTakeover,
+        isTakeover: isOwnTakeover,
       };
     }),
     tokens: room.game.tokens,
@@ -529,6 +530,13 @@ function finishGame(io, room) {
         room.settlementTimer = setTimeout(() => finishGame(io, room), 10000);
         return;
       }
+      if (wagerResult.cancelled) {
+        room.phase = 'over';
+        broadcast(io, room);
+        io.to(room.id).emit('game_over', { winner: null, cancelled: true, wager: null });
+        destroyRoom(io, room);
+        return;
+      }
     }
 
     room.phase = 'over';
@@ -708,13 +716,6 @@ function createRoom(io, players, { tokensToWin = 4, wager = null } = {}) {
         payout: wager.payout,
       } : null,
     });
-    if (!wager && players.length === 1 && p.playerId && p.matchmakingId) {
-      p.socket.emit('notice', {
-        title: 'Free bot match',
-        message: 'No human opponent was found. This match is free: no bet was charged and there is no platform fee or payout.',
-        type: 'info',
-      });
-    }
   });
 
   startTurn(io, room);
@@ -744,21 +745,7 @@ function checkQueue(io, queueType) {
     const players = [q[first], q[second]];
     q.splice(second, 1);
     q.splice(first, 1);
-    processingQueues.add(queueType);
-    startWageredRoom(io, players, tokensToWin)
-      .catch((error) => {
-        const message = error instanceof WagerError
-          ? error.message
-          : 'Could not start the wagered match. Please try again.';
-        if (!(error instanceof WagerError)) {
-          console.error('Could not start wagered match:', error);
-        }
-        players.forEach((player) => player.socket.emit('match_error', message));
-      })
-      .finally(() => {
-        processingQueues.delete(queueType);
-        checkQueue(io, queueType);
-      });
+    beginWageredMatch(io, queueType, players, tokensToWin, false);
     return;
   }
 
@@ -767,8 +754,7 @@ function checkQueue(io, queueType) {
   );
   if (expiredIndex !== -1) {
     const [player] = q.splice(expiredIndex, 1);
-    createRoom(io, [player], { tokensToWin });
-    setImmediate(() => checkQueue(io, queueType));
+    beginWageredMatch(io, queueType, [player], tokensToWin, true);
     return;
   }
 
@@ -788,7 +774,25 @@ function checkQueue(io, queueType) {
   }
 }
 
-async function startWageredRoom(io, players, tokensToWin) {
+function beginWageredMatch(io, queueType, players, tokensToWin, botOpponent) {
+  processingQueues.add(queueType);
+  startWageredRoom(io, players, tokensToWin, botOpponent)
+    .catch((error) => {
+      const message = error instanceof WagerError
+        ? error.message
+        : 'Could not start the wagered match. Please try again.';
+      if (!(error instanceof WagerError)) {
+        console.error('Could not start wagered match:', error);
+      }
+      players.forEach((player) => player.socket.emit('match_error', message));
+    })
+    .finally(() => {
+      processingQueues.delete(queueType);
+      checkQueue(io, queueType);
+    });
+}
+
+async function startWageredRoom(io, players, tokensToWin, botOpponent) {
   if (players.some((player) => !player.socket.connected)) {
     throw new WagerError('A player disconnected before the match could start.');
   }
@@ -797,7 +801,8 @@ async function startWageredRoom(io, players, tokensToWin) {
     players,
     players[0].bet,
     matchCode,
-    players[0].queueType
+    players[0].queueType,
+    { botOpponent }
   );
   try {
     createRoom(io, players, { tokensToWin, wager });
@@ -942,8 +947,13 @@ function registerHandlers(io, socket) {
 
   socket.on('find_match', ({ name, requestId, queueType, bet } = {}) => {
     if (socket.data.roomId) return;
-    if (!socket.data.playerId || !socket.data.masterId) {
-      socket.emit('match_error', 'Sign in as a Player to place a bet.');
+    if (
+      !socket.data.playerId
+      || !socket.data.masterId
+      || !socket.data.authExpiresAt
+      || socket.data.authExpiresAt <= Math.floor(Date.now() / 1000)
+    ) {
+      socket.emit('match_error', 'Sign in again as a Player to place a bet.');
       return;
     }
     const betAmount = Number(bet);

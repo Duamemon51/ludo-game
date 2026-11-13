@@ -215,6 +215,7 @@ async function getMatches(req, res, next) {
     const player = await playerAccount(req.playerId);
     const [rows] = await pool.execute(
       `SELECT m.match_code, m.bet_per_player, m.platform_fee, m.payout, m.winner_id,
+        m.opponent_is_bot,
         m.status, m.started_at, m.finished_at,
         GROUP_CONCAT(DISTINCT opponent.display_name ORDER BY opponent.id SEPARATOR ', ') AS opponents
        FROM match_players own
@@ -227,11 +228,17 @@ async function getMatches(req, res, next) {
     );
     res.json(rows.map((match) => ({
       id: match.match_code,
-      opponent: match.opponents || '—',
+      opponent: match.opponent_is_bot ? 'Opponent' : match.opponents || '—',
       bet: Number(match.bet_per_player),
       fee: Number(match.platform_fee),
-      result: match.winner_id == null ? 'In progress' : String(match.winner_id) === String(player.id) ? 'Won' : 'Lost',
-      amount: match.winner_id == null ? 0 : String(match.winner_id) === String(player.id) ? Number(match.payout) : -Number(match.bet_per_player),
+      result: match.status === 'CANCELLED'
+        ? 'Cancelled'
+        : match.status === 'IN_PROGRESS'
+          ? 'In progress'
+          : String(match.winner_id) === String(player.id) ? 'Won' : 'Lost',
+      amount: match.status !== 'COMPLETED'
+        ? 0
+        : String(match.winner_id) === String(player.id) ? Number(match.payout) : -Number(match.bet_per_player),
       payout: Number(match.payout),
       status: match.status === 'IN_PROGRESS' ? 'Live' : match.status === 'COMPLETED' ? 'Finished' : 'Cancelled',
       date: dateLabel(match.finished_at || match.started_at),

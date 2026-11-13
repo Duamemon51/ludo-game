@@ -11,6 +11,11 @@ assert.deepStrictEqual(calculateWager(300, 10), {
   platformFee: 60,
   payout: 540,
 });
+assert.deepStrictEqual(calculateWager(300, 10, true), {
+  feePerPlayer: 30,
+  platformFee: 30,
+  payout: 540,
+});
 assert.deepStrictEqual(calculateWager(300, 0), {
   feePerPlayer: 0,
   platformFee: 0,
@@ -182,6 +187,16 @@ assert.deepStrictEqual(playerView.seats[0], {
 });
 assert.deepStrictEqual(opponentView.seats[0], {
   color: 'red', name: 'Player', isBot: false, isTakeover: false,
+});
+const botOpponentRoom = {
+  ...takeoverRoom,
+  seats: [
+    { color: 'red', name: 'Player', baseName: 'Player', isBot: false, socketId: 'player-socket' },
+    { color: 'yellow', name: 'Ahmed', baseName: 'Ahmed', isBot: true, level: 'expert', socketId: null },
+  ],
+};
+assert.deepStrictEqual(publicState(botOpponentRoom, 'player-socket').seats[1], {
+  color: 'yellow', name: 'Ahmed', isBot: false, isTakeover: false,
 });
 console.log('PASS: takeover status is visible only to the affected player');
 
