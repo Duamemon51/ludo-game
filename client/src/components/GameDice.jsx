@@ -119,8 +119,9 @@ export default function GameDice({
         /* expanding pulse ring in the player's color */
         .gd.can-roll::before {
           z-index: 1;
-          border: 2px solid color-mix(in srgb, var(--c) 55%, #fff);
-          background: radial-gradient(circle, color-mix(in srgb, var(--c) 45%, transparent) 0%, transparent 70%);
+          border: 2px solid rgba(255, 255, 255, .75);
+          background: rgba(255, 255, 255, .2);
+          -webkit-animation: gd-ring 1.3s ease-out infinite;
           animation: gd-ring 1.3s ease-out infinite;
         }
         /* the badge itself */
@@ -131,21 +132,49 @@ export default function GameDice({
             url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 4.5v12.5M6.2 11.6 12 17.8l5.8-6.2' fill='none' stroke='%23000' stroke-opacity='.28' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round' transform='translate(0 .9)'/%3E%3Cpath d='M12 4.5v12.5M6.2 11.6 12 17.8l5.8-6.2' fill='none' stroke='%23fff' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
               center / 74% no-repeat,
             radial-gradient(circle at 32% 24%, rgba(255, 255, 255, .75) 0, rgba(255, 255, 255, 0) 42%),
-            linear-gradient(160deg,
-              color-mix(in srgb, var(--c) 70%, #fff) 0%,
-              var(--c) 55%,
-              color-mix(in srgb, var(--c) 62%, #000) 100%);
+            linear-gradient(160deg, var(--c), var(--c));
           box-shadow:
-            0 3px 0 color-mix(in srgb, var(--c) 45%, #000),
+            0 3px 0 rgba(0, 0, 0, .35),
             0 7px 12px rgba(0, 0, 0, .45),
-            0 0 14px color-mix(in srgb, var(--c) 70%, transparent),
+            0 0 14px rgba(255, 255, 255, .35),
             inset 0 1.5px 1px rgba(255, 255, 255, .9),
             inset 0 -3px 4px rgba(0, 0, 0, .22);
+          -webkit-animation: gd-arrow-bounce 700ms cubic-bezier(.45, 0, .55, 1) infinite alternate;
           animation: gd-arrow-bounce 700ms cubic-bezier(.45, 0, .55, 1) infinite alternate;
+        }
+        @supports (color: color-mix(in srgb, red, blue)) {
+          .gd.can-roll::before {
+            border-color: color-mix(in srgb, var(--c) 55%, #fff);
+            background: radial-gradient(circle, color-mix(in srgb, var(--c) 45%, transparent) 0%, transparent 70%);
+          }
+          .gd.can-roll::after {
+            background:
+              url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 4.5v12.5M6.2 11.6 12 17.8l5.8-6.2' fill='none' stroke='%23000' stroke-opacity='.28' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round' transform='translate(0 .9)'/%3E%3Cpath d='M12 4.5v12.5M6.2 11.6 12 17.8l5.8-6.2' fill='none' stroke='%23fff' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+                center / 74% no-repeat,
+              radial-gradient(circle at 32% 24%, rgba(255, 255, 255, .75) 0, rgba(255, 255, 255, 0) 42%),
+              linear-gradient(160deg,
+                color-mix(in srgb, var(--c) 70%, #fff) 0%,
+                var(--c) 55%,
+                color-mix(in srgb, var(--c) 62%, #000) 100%);
+            box-shadow:
+              0 3px 0 color-mix(in srgb, var(--c) 45%, #000),
+              0 7px 12px rgba(0, 0, 0, .45),
+              0 0 14px color-mix(in srgb, var(--c) 70%, transparent),
+              inset 0 1.5px 1px rgba(255, 255, 255, .9),
+              inset 0 -3px 4px rgba(0, 0, 0, .22);
+          }
+        }
+        @-webkit-keyframes gd-arrow-bounce {
+          from { -webkit-transform: translateY(-2px); }
+          to { -webkit-transform: translateY(5px); }
         }
         @keyframes gd-arrow-bounce {
           from { transform: translateY(-2px); }
           to { transform: translateY(5px); }
+        }
+        @-webkit-keyframes gd-ring {
+          0% { -webkit-transform: scale(.75); opacity: .9; }
+          100% { -webkit-transform: scale(1.9); opacity: 0; }
         }
         @keyframes gd-ring {
           0% { transform: scale(.75); opacity: .9; }
@@ -198,7 +227,7 @@ export default function GameDice({
         @media (prefers-reduced-motion: reduce) {
           .gd-hop { transition: none; }
           .gd-tumble { transition: none; }
-          .gd.can-roll::before, .gd.can-roll::after { animation: none; }
+          .gd.can-roll::before, .gd.can-roll::after { -webkit-animation: none; animation: none; }
           .gd-tumble.rolling { animation: gd-tumble-reduced var(--roll) ease-out both !important; }
           @keyframes gd-tumble-reduced {
             from { transform: rotateX(-90deg) rotateY(90deg); }
