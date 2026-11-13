@@ -3,7 +3,9 @@ const express = require('express');
 const http = require('http');
 const cors = require('cors');
 const helmet = require('helmet');
+const jwt = require('jsonwebtoken');
 const { Server } = require('socket.io');
+const { pool } = require('./db/pool');
 const { registerHandlers } = require('./socket/rooms');
 
 const app = express();
@@ -63,6 +65,42 @@ const io = new Server(server, {
   cors: { origin: allowClientOrigin },
   pingInterval: 10000, // detect dropped connections within about 20 seconds
   pingTimeout: 10000,
+});
+
+io.use(async (socket, next) => {
+  const token = socket.handshake.auth?.token;
+  if (!token) {
+    next();
+    return;
+  }
+
+  try {
+    const secret = process.env.JWT_SECRET;
+    if (!secret || Buffer.byteLength(secret) < 32) {
+      throw new Error('Player authentication is not configured.');
+    }
+    const claims = jwt.verify(token, secret, {
+      algorithms: ['HS256'],
+      issuer: 'ludo-game',
+      audience: 'ludo-player',
+    });
+    if (claims.role !== 'PLAYER' || !claims.sub) throw new Error('Player access is required.');
+
+    const [rows] = await pool.execute(
+      `SELECT p.id, p.master_id, p.status, m.status AS master_status
+       FROM accounts p JOIN accounts m ON m.id = p.master_id AND m.role = 'MASTER'
+       WHERE p.id = ? AND p.role = 'PLAYER' LIMIT 1`,
+      [claims.sub]
+    );
+    if (!rows[0] || rows[0].status === 'BLOCKED' || rows[0].master_status === 'BLOCKED') {
+      throw new Error('Player session is no longer valid.');
+    }
+    socket.data.playerId = String(rows[0].id);
+    socket.data.masterId = String(rows[0].master_id);
+    next();
+  } catch (error) {
+    next(new Error(error.message || 'Player authentication failed.'));
+  }
 });
 
 io.on('connection', (socket) => {
