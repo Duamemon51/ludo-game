@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  PATH, LANES, START, BASE_SPOTS, FINISH_XY, HOME_TRIANGLES, layoutTokens,
+  COLORS, PATH, LANES, START, BASE_SPOTS, FINISH_XY, HOME_TRIANGLES, layoutTokens,
 } from '../ludoLayout';
 import BoardBackground from './BoardBackground';
 import Token, { PawnDefs } from './Token';
@@ -131,8 +131,6 @@ export default function Board({
     captureAudio.current.preload = 'auto';
     captureAudio.current.volume = 0.65;
     captureAudio.current.playbackRate = 1.15;
-    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
-    if (AudioContextConstructor) captureContext.current = new AudioContextConstructor();
     // CC0 sound: "Game Success Fanfare Short" by el_boss.
     victoryAudio.current = new Audio('/sounds/victory-fanfare.mp3');
     victoryAudio.current.preload = 'auto';
@@ -167,13 +165,22 @@ export default function Board({
         .catch((error) => {
           audio.muted = false;
           unlocking.current = false;
-          console.warn('Could not unlock game sound:', error);
+          if (error.name !== 'NotAllowedError') {
+            console.warn('Could not unlock game sound:', error);
+          }
         });
     };
-    const unlockGameAudio = () => {
+    const unlockGameAudio = (event) => {
+      if (!event.isTrusted) return;
+      const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextConstructor && !captureContext.current) {
+        captureContext.current = new AudioContextConstructor();
+      }
       if (captureContext.current?.state === 'suspended') {
         captureContext.current.resume().catch((error) => {
-          console.warn('Could not unlock arcade capture sound:', error);
+          if (error.name !== 'NotAllowedError') {
+            console.warn('Could not unlock arcade capture sound:', error);
+          }
         });
       }
       unlockAudio(captureAudio.current, captureAudioUnlocked, captureAudioUnlocking);
@@ -195,7 +202,9 @@ export default function Board({
     }
     captureAudio.current.currentTime = 0;
     captureAudio.current.play().catch((error) => {
-      console.warn('Could not play capture sound:', error);
+      if (error.name !== 'NotAllowedError') {
+        console.warn('Could not play capture sound:', error);
+      }
     });
   }, [kill?.sequence, soundMuted]);
 
@@ -204,7 +213,9 @@ export default function Board({
     playedWinner.current = celebrateWinner;
     victoryAudio.current.currentTime = 0;
     victoryAudio.current.play().catch((error) => {
-      console.warn('Could not play victory fanfare:', error);
+      if (error.name !== 'NotAllowedError') {
+        console.warn('Could not play victory fanfare:', error);
+      }
     });
   }, [celebrateWinner, soundMuted]);
 
@@ -216,7 +227,9 @@ export default function Board({
     if (!audio) return;
     audio.currentTime = 0;
     audio.play().catch((error) => {
-      console.warn('Could not play token move sound:', error);
+      if (error.name !== 'NotAllowedError') {
+        console.warn('Could not play token move sound:', error);
+      }
     });
   }, [lastMove, soundMuted]);
 

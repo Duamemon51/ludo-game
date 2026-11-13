@@ -54,7 +54,9 @@ export default function GameDice({
     if (!audio || soundMuted) return;
     audio.currentTime = 0;
     audio.play().catch((error) => {
-      console.warn('Could not play dice roll sound:', error);
+      if (error.name !== 'NotAllowedError') {
+        console.warn('Could not play dice roll sound:', error);
+      }
     });
   }, [soundMuted]);
 

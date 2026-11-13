@@ -136,7 +136,7 @@ export default function PlayerHome({
   const [profile, setProfile] = useState(null);
   const [wallet, setWallet] = useState({ balance: 0, heldAmount: 0, availableBalance: 0, ledger: [], requests: [] });
   const [matches, setMatches] = useState([]);
-  const [tournament, setTournament] = useState({ enabled: false, entryFee: 300, mode: 'Quick 1 vs 1' });
+  const [tournament, setTournament] = useState({ enabled: false, entryFee: 300, feePercent: 10, mode: 'Quick 1 vs 1' });
   const [loading, setLoading] = useState(true);
   const [requestingWalletRequest, setRequestingWalletRequest] = useState(false);
   const [walletRequestOpen, setWalletRequestOpen] = useState(false);
@@ -225,10 +225,17 @@ export default function PlayerHome({
     currentHistoryPage * historyPageSize
   );
   const tournamentBetAmount = tournamentBet;
+  const feePercent = Number(tournament.feePercent ?? 10);
+  const roundCredits = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
+  const feePerPlayer = roundCredits((bet * feePercent) / 100);
+  const matchPlatformFee = roundCredits(feePerPlayer * 2);
+  const matchPayout = roundCredits((bet * 2) - matchPlatformFee);
   const tournamentPot = Number.isSafeInteger(tournamentBetAmount) && tournamentBetAmount >= 0
     ? tournamentBetAmount * 2
     : 0;
-  const tournamentFee = Math.round(tournamentPot * 0.1);
+  const tournamentFeePerPlayer = roundCredits((tournamentBetAmount * feePercent) / 100);
+  const tournamentFee = roundCredits(tournamentFeePerPlayer * 2);
+  const tournamentPayout = roundCredits(tournamentPot - tournamentFee);
   const validTournamentBet = TOURNAMENT_BETS.includes(tournamentBetAmount)
     && tournamentBetAmount <= availableBalance;
 
@@ -1090,7 +1097,7 @@ export default function PlayerHome({
           {page === 'match' && (
             <section className="ph-panel">
               <PanelHead title="Choose your bet" onBack={() => setPage('home')} />
-              <p>Minimum bet is 300. The platform fee is 10% of the total pot.</p>
+              <p>Minimum bet is 300. The platform receives {feePercent}% of each player’s bet.</p>
               <div className="ph-bet-selector" role="group" aria-label="Bet amount">
                 <button
                   type="button"
@@ -1129,8 +1136,8 @@ export default function PlayerHome({
               <div className="ph-bet-hint">Choose a bet from 300 to 5,000 credits</div>
               <div className="ph-prize-summary" aria-live="polite">
                 <div><span>Total pot</span><strong>{(bet * 2).toLocaleString()}</strong></div>
-                <div><span>Platform fee</span><strong>{Math.round(bet * 2 * 0.1).toLocaleString()}</strong></div>
-                <div className="ph-prize-winner"><span>Winner gets</span><strong>{Math.round(bet * 2 * 0.9).toLocaleString()}</strong></div>
+                <div><span>Platform fee ({feePercent}%)</span><strong>{feePerPlayer.toLocaleString()}</strong></div>
+                <div className="ph-prize-winner"><span>Winner gets</span><strong>{matchPayout.toLocaleString()}</strong></div>
               </div>
               {!active && <div className="ph-lock">Your account is blocked. You cannot start a game.</div>}
               <button type="button" className="ph-primary" disabled={loading || !active || !connected || bet < 300 || bet > availableBalance} onClick={() => onFindMatch(bet, 'normal')}>
@@ -1186,8 +1193,8 @@ export default function PlayerHome({
                   </div>
                   <div className="ph-prize-summary" aria-live="polite">
                     <div><span>Total pot</span><strong>{tournamentPot.toLocaleString()}</strong></div>
-                    <div><span>Platform fee</span><strong>{tournamentFee.toLocaleString()}</strong></div>
-                    <div className="ph-prize-winner"><span>Winner gets</span><strong>{(tournamentPot - tournamentFee).toLocaleString()}</strong></div>
+                    <div><span>Platform fee ({feePercent}% each)</span><strong>{tournamentFee.toLocaleString()}</strong></div>
+                    <div className="ph-prize-winner"><span>Winner gets</span><strong>{tournamentPayout.toLocaleString()}</strong></div>
                   </div>
                   <button
                     type="button"

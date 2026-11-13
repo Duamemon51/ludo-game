@@ -18,8 +18,17 @@ function getClientId() {
   }
 }
 
+function getAuthToken() {
+  try {
+    const session = JSON.parse(localStorage.getItem('ludo-auth-session') || 'null');
+    return session?.account?.role === 'PLAYER' ? session.token : null;
+  } catch {
+    return null;
+  }
+}
+
 export const socket = io(URL, {
-  auth: { clientId: getClientId() },
+  auth: (callback) => callback({ clientId: getClientId(), token: getAuthToken() }),
   autoConnect: true,
   reconnection: true,
   reconnectionAttempts: Infinity,

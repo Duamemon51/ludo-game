@@ -27,40 +27,33 @@ function unlockUiAudio() {
   uiAudioContext ||= new AudioContextClass();
   if (uiAudioContext.state === 'suspended') {
     return uiAudioContext.resume().catch((error) => {
-      console.warn('Could not enable UI audio:', error);
+      if (error.name !== 'NotAllowedError') {
+        console.warn('Could not enable UI audio:', error);
+      }
     });
   }
   return Promise.resolve();
 }
 
 function playMatchFoundChime() {
-  unlockUiAudio()
-    .then(() => {
-      const context = uiAudioContext;
-      if (!context || context.state !== 'running') {
-        console.warn('Match-found chime unavailable: audio is not enabled.');
-        return;
-      }
+  const context = uiAudioContext;
+  if (!context || context.state !== 'running') return;
 
-      const start = context.currentTime;
-      [659.25, 880].forEach((frequency, index) => {
-        const oscillator = context.createOscillator();
-        const gain = context.createGain();
-        const noteStart = start + index * 0.13;
-        oscillator.type = 'sine';
-        oscillator.frequency.setValueAtTime(frequency, noteStart);
-        gain.gain.setValueAtTime(0.0001, noteStart);
-        gain.gain.linearRampToValueAtTime(0.2, noteStart + 0.015);
-        gain.gain.exponentialRampToValueAtTime(0.0001, noteStart + 0.42);
-        oscillator.connect(gain);
-        gain.connect(context.destination);
-        oscillator.start(noteStart);
-        oscillator.stop(noteStart + 0.43);
-      });
-    })
-    .catch((error) => {
-      console.warn('Could not enable match-found chime:', error);
-    });
+  const start = context.currentTime;
+  [659.25, 880].forEach((frequency, index) => {
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    const noteStart = start + index * 0.13;
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(frequency, noteStart);
+    gain.gain.setValueAtTime(0.0001, noteStart);
+    gain.gain.linearRampToValueAtTime(0.2, noteStart + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, noteStart + 0.42);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(noteStart);
+    oscillator.stop(noteStart + 0.43);
+  });
 }
 
 // Where each color's panel sits (matches the board corners)
@@ -110,6 +103,7 @@ export default function App() {
   const [game, setGame] = useState(null);
   const [playerAvatar, setPlayerAvatar] = useState('');
   const [matchWinAmount, setMatchWinAmount] = useState(null);
+  const [gameResult, setGameResult] = useState(null);
   const [soundMuted, setSoundMuted] = useState(() => localStorage.getItem('ludo-sound-muted') === 'true');
   const [lobby, setLobby] = useState(null);
   const [bubbles, setBubbles] = useState({}); // key: color (in game) or socket id (in lobby)
@@ -151,15 +145,17 @@ export default function App() {
     clickSound.playbackRate = 1.8;
 
     const playButtonSound = (event) => {
-      if (soundMuted) return;
+      if (soundMuted || !event.isTrusted || !(event.target instanceof Element)) return;
       if (event.target.closest('.sa-dashboard, .master-dashboard')) return;
-      unlockUiAudio();
       const control = event.target.closest('button, [role="button"]');
       if (!control || control.disabled || control.getAttribute('aria-disabled') === 'true') return;
       if (control.matches('.gd')) return;
+      unlockUiAudio();
       clickSound.currentTime = 0;
       clickSound.play().catch((error) => {
-        console.warn('Could not play button click sound:', error);
+        if (error.name !== 'NotAllowedError') {
+          console.warn('Could not play button click sound:', error);
+        }
       });
     };
     const playKeyboardButtonSound = (event) => {
@@ -201,6 +197,8 @@ export default function App() {
       const result = await signIn(loginId, password);
       const session = { token: result.token, account: result.account };
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+      socket.disconnect();
+      socket.connect();
       setAuthSession(session);
       if (result.account.role === 'PLAYER') {
         setName(result.account.name);
@@ -220,6 +218,8 @@ export default function App() {
 
   const signOut = () => {
     localStorage.removeItem(AUTH_STORAGE_KEY);
+    socket.disconnect();
+    socket.connect();
     setAuthSession(null);
     setLoginError('');
     setHomeView('login');
@@ -273,7 +273,7 @@ export default function App() {
       setLobby(data);
       setStatus('lobby');
     };
-    const onMatch = ({ yourColor, requestId }) => {
+    const onMatch = ({ yourColor, requestId, wager }) => {
       if (
         requestId
         && (cancelledMatchmakingRef.current || requestId !== matchmakingRequestRef.current)
@@ -286,6 +286,7 @@ export default function App() {
       cancelledMatchmakingRef.current = false;
       clearTimeout(resultTimerRef.current);
       playMatchFoundChime();
+      setMatchWinAmount(wager?.payout ?? null);
       setMyColor(yourColor);
       setHomeView('menu');
       setLobby(null);
@@ -299,11 +300,20 @@ export default function App() {
         localDeadline: state.timeLeftMs != null ? Date.now() + state.timeLeftMs : null,
       });
     };
-    const onOver = () => {
+    const onMatchError = (message) => {
+      matchmakingRequestRef.current = null;
+      cancelledMatchmakingRef.current = false;
+      setMatchWinAmount(null);
+      setStatus('idle');
+      showNotice(message);
+    };
+    const onOver = (result) => {
+      setGameResult(result);
       clearTimeout(resultTimerRef.current);
       setStatus('finishing');
       resultTimerRef.current = setTimeout(() => setStatus('over'), RESULT_REVEAL_MS);
     };
+    const onSettlementError = (message) => showNotice(message);
     const onChat = (m) => {
       const key = m.color || m.from;
       setBubbles((prev) => ({ ...prev, [key]: { id: m.id, text: m.text } }));
@@ -330,8 +340,10 @@ export default function App() {
     socket.on('lobby_update', onLobby);
     socket.on('lobby_error', showNotice);
     socket.on('match_found', onMatch);
+    socket.on('match_error', onMatchError);
     socket.on('game_update', onUpdate);
     socket.on('notice', showNotice);
+    socket.on('settlement_error', onSettlementError);
     socket.on('game_over', onOver);
     if (GAME_CHAT_ENABLED) socket.on('chat_message', onChat);
     if (socket.connected) socket.emit('resume_game'); // page was refreshed while already connected
@@ -348,8 +360,10 @@ export default function App() {
       socket.off('lobby_update', onLobby);
       socket.off('lobby_error', showNotice);
       socket.off('match_found', onMatch);
+      socket.off('match_error', onMatchError);
       socket.off('game_update', onUpdate);
       socket.off('notice', showNotice);
+      socket.off('settlement_error', onSettlementError);
       socket.off('game_over', onOver);
       if (GAME_CHAT_ENABLED) socket.off('chat_message', onChat);
       clearTimeout(resultTimerRef.current);
@@ -429,11 +443,12 @@ export default function App() {
     const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     matchmakingRequestRef.current = requestId;
     cancelledMatchmakingRef.current = false;
+    setGameResult(null);
     const numericBet = Number(bet);
     setMatchWinAmount(Number.isFinite(numericBet) && numericBet > 0
       ? Math.round(numericBet * 2 * 0.9)
       : null);
-    socket.emit('find_match', { mode: 2, name: cleanName(), requestId, queueType });
+    socket.emit('find_match', { mode: 2, name: cleanName(), requestId, queueType, bet: numericBet });
   };
   const createRoom = (mode) => socket.emit('create_room', { mode, name: cleanName() });
   const joinRoom = () => {
@@ -454,6 +469,8 @@ export default function App() {
   const reset = () => {
     clearTimeout(resultTimerRef.current);
     setGame(null);
+    setGameResult(null);
+    setMatchWinAmount(null);
     setMyColor(null);
     setStatus('idle');
   };
@@ -716,8 +733,8 @@ export default function App() {
       )}
 
       {status === 'over' && game && (
-        <div className={`overlay game-result ${game.winner === myColor ? 'victory' : 'defeat'}`} inert={!connected}>
-          {game.winner === myColor && (
+        <div className={`overlay game-result ${game.winner === myColor && !gameResult?.cancelled ? 'victory' : 'defeat'}`} inert={!connected}>
+          {game.winner === myColor && !gameResult?.cancelled && (
             <div className="victory-confetti" aria-hidden="true">
               {Array.from({ length: 32 }, (_, i) => (
                 <span
@@ -731,15 +748,24 @@ export default function App() {
               ))}
             </div>
           )}
-          <div className={`card center result-card ${game.winner === myColor ? 'win' : 'loss'}`}>
+          <div className={`card center result-card ${game.winner === myColor && !gameResult?.cancelled ? 'win' : 'loss'}`}>
             <div className="result-icon" aria-hidden="true">
-              {game.winner === myColor ? '🏆' : '🎲'}
+              {gameResult?.cancelled ? '↩' : game.winner === myColor ? '🏆' : '🎲'}
             </div>
             <span className="result-kicker">
-              {game.winner === myColor ? 'CHAMPION' : 'GAME OVER'}
+              {gameResult?.cancelled ? 'MATCH CANCELLED' : game.winner === myColor ? 'CHAMPION' : 'GAME OVER'}
             </span>
-            <h2>{game.winner === myColor ? 'You won!' : `${cap(game.winner)} wins`}</h2>
-            <p>{game.winner === myColor ? 'Amazing game. You conquered the board!' : 'Better luck next game!'}</p>
+            <h2>{gameResult?.cancelled ? 'Match cancelled' : game.winner === myColor ? 'You won!' : `${cap(game.winner)} wins`}</h2>
+            <p>{gameResult?.cancelled
+              ? 'Your bet has been refunded. No platform fee was charged.'
+              : game.winner === myColor ? 'Amazing game. You conquered the board!' : 'Better luck next game!'}</p>
+            {gameResult?.wager && (
+              <p>
+                Bet: {gameResult.wager.bet.toLocaleString()} credits · Platform fee: {gameResult.wager.feePerPlayer.toLocaleString()} credits · {game.winner === myColor
+                  ? `Payout: ${gameResult.wager.payout.toLocaleString()} credits`
+                  : `Lost: ${gameResult.wager.bet.toLocaleString()} credits`}
+              </p>
+            )}
             <button className="btn" onClick={reset}>Play again</button>
           </div>
         </div>
