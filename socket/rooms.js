@@ -1,5 +1,7 @@
 const engine = require('../game/engine');
 const { chooseTurnMove, scoreMove } = require('../game/bot');
+const { randomUUID } = require('node:crypto');
+const { WagerError, createWageredMatch, settleWageredMatch, refundWageredMatch } = require('../game/wager');
 
 const MODE_COLORS = {
   2: ['red', 'yellow'],
@@ -19,18 +21,19 @@ const BOT_SIX_CHANCE = {
 };
 
 const BOT_NAMES = [
-  'Oliver', 'Ethan', 'Liam', 'Noah', 'Mason', 'Lucas', 'Logan', 'James',
-  'Aiden', 'Henry', 'Jack', 'Owen', 'Leo', 'Miles', 'Elliot', 'Caleb',
-  'Wyatt', 'Julian', 'Isaac', 'Theodore', 'Arthur', 'Finn', 'Jasper',
-  'Ruby', 'Alice', 'Chloe', 'Grace', 'Ella', 'Sophie', 'Hazel', 'Violet',
-  'Lily', 'Mila', 'Nora', 'Stella', 'Ivy', 'Clara', 'Lucy', 'Evelyn',
-  'Harper', 'Willow', 'Aurora', 'Zoe', 'Naomi', 'Freya', 'Quinn',
+  'Ahsan', 'Ahmed', 'Kashif', 'Hassan', 'Usman', 'Bilal', 'Hamza', 'Zain',
+  'Saad', 'Abdullah', 'Ibrahim', 'Umar', 'Huzaifa', 'Ayan', 'Danish', 'Farhan',
+  'Fahad', 'Imran', 'Salman', 'Asad', 'Taha', 'Raza', 'Shahzaib', 'Arham',
+  'Mustafa', 'Adeel', 'Aqib', 'Waleed', 'Rehan', 'Sameer', 'Ayesha', 'Fatima',
+  'Maryam', 'Zainab', 'Hira', 'Sana', 'Noor', 'Mahnoor', 'Eman', 'Iqra',
+  'Laiba', 'Amna', 'Dua', 'Mehwish', 'Areeba', 'Anaya', 'Rabia', 'Komal',
 ];
 const rooms = new Map();
 const sessions = new Map(); // clientId -> roomId (for reconnecting)
 const botNamesByClientId = new Map();
 const queues = { normal: [], tournament: [] };
 const queueTimers = { normal: null, tournament: null };
+const processingQueues = new Set();
 let roomCounter = 0;
 
 // ---------- Friend rooms (private lobbies) ----------
@@ -504,17 +507,53 @@ function doMove(io, room, tokenIdx, diceId) {
 }
 
 function finishGame(io, room) {
+  if (room.finishing) return;
+  room.finishing = true;
   clearTimeout(room.timer);
-  room.phase = 'over';
+  clearTimeout(room.settlementTimer);
   room.deadline = null;
-  broadcast(io, room);
-  io.to(room.id).emit('game_over', { winner: room.game.winner });
-  destroyRoom(io, room);
+
+  const finish = async () => {
+    let wagerResult = null;
+    if (room.match) {
+      const winner = seatOf(room, room.game.winner);
+      try {
+        wagerResult = await settleWageredMatch(room.match.id, winner?.playerId);
+      } catch (error) {
+        console.error(`Could not settle wagered match ${room.match.code}:`, error);
+        room.phase = 'settlement-error';
+        room.finishing = false;
+        broadcast(io, room);
+        io.to(room.id).emit('settlement_error',
+          'Game ended, but the wallet settlement is still processing. Your credits have not been lost.');
+        room.settlementTimer = setTimeout(() => finishGame(io, room), 10000);
+        return;
+      }
+    }
+
+    room.phase = 'over';
+    broadcast(io, room);
+    io.to(room.id).emit('game_over', {
+      winner: room.game.winner,
+      wager: wagerResult,
+    });
+    destroyRoom(io, room);
+  };
+
+  finish().catch((error) => {
+    room.finishing = false;
+    room.phase = 'settlement-error';
+    console.error(`Could not finish game ${room.id}:`, error);
+    broadcast(io, room);
+    io.to(room.id).emit('settlement_error',
+      'Game ended, but its result could not be recorded. Please contact support.');
+    room.settlementTimer = setTimeout(() => finishGame(io, room), 10000);
+  });
 }
 
 function forfeitGame(io, room, seat, socket) {
   const opponent = room.seats.find((candidate) => candidate.color !== seat.color);
-  if (!opponent) return false;
+  if (!opponent || room.finishing || room.game.winner) return false;
 
   room.game.winner = opponent.color;
   seat.socketId = null;
@@ -585,6 +624,12 @@ function rollCaptureBonusDie(io, room) {
 function destroyRoom(io, room) {
   clearTimeout(room.timer);
   clearTimeout(room.emptyTimer);
+  clearTimeout(room.settlementTimer);
+  if (room.match && room.phase !== 'over') {
+    refundWageredMatch(room.match.id).catch((error) => {
+      console.error(`Could not refund wagered match ${room.match.code}:`, error);
+    });
+  }
   for (const seat of room.seats) {
     if (seat.clientId && sessions.get(seat.clientId) === room.id) sessions.delete(seat.clientId);
     if (!seat.socketId) continue;
@@ -600,7 +645,7 @@ function destroyRoom(io, room) {
 
 // ---------- Rooms and matchmaking ----------
 
-function createRoom(io, players, { tokensToWin = 4 } = {}) {
+function createRoom(io, players, { tokensToWin = 4, wager = null } = {}) {
   const mode = 2;
   const colors = MODE_COLORS[mode];
   const id = 'room_' + ++roomCounter;
@@ -616,6 +661,8 @@ function createRoom(io, players, { tokensToWin = 4 } = {}) {
       return {
         color, name: p.name, baseName: p.name,
         clientId: p.socket.data.clientId || null,
+        playerId: p.playerId || null,
+        masterId: p.masterId || null,
         matchmakingId: p.matchmakingId || null,
         socketId: p.socket.id, isBot: false, missed: 0, level: 'medium',
       };
@@ -637,6 +684,7 @@ function createRoom(io, players, { tokensToWin = 4 } = {}) {
 
   const room = {
     id, mode, seats,
+    match: wager,
     game: engine.createGame(colors, { tokensToWin }),
     phase: 'roll', dice: null, diceOptions: [], pendingDiceOptions: [], captureDiceOptions: [], dieRollId: 0,
     rolledDice: [], rolledDiceIds: [], usedDiceIds: [], rollId: 0, validMoves: [], lastMove: null,
@@ -654,7 +702,19 @@ function createRoom(io, players, { tokensToWin = 4 } = {}) {
       roomId: id,
       yourColor: colors[i],
       requestId: p.matchmakingId || undefined,
+      wager: wager ? {
+        bet: wager.bet,
+        feePerPlayer: wager.feePerPlayer,
+        payout: wager.payout,
+      } : null,
     });
+    if (!wager && players.length === 1 && p.playerId && p.matchmakingId) {
+      p.socket.emit('notice', {
+        title: 'Free bot match',
+        message: 'No human opponent was found. This match is free: no bet was charged and there is no platform fee or payout.',
+        type: 'info',
+      });
+    }
   });
 
   startTurn(io, room);
@@ -663,7 +723,54 @@ function createRoom(io, players, { tokensToWin = 4 } = {}) {
 function checkQueue(io, queueType) {
   const q = queues[queueType];
   const tokensToWin = queueType === 'tournament' ? 1 : 4;
-  while (q.length >= 2) createRoom(io, q.splice(0, 2), { tokensToWin });
+  if (processingQueues.has(queueType)) return;
+
+  let pair;
+  for (let first = 0; first < q.length && !pair; first += 1) {
+    for (let second = first + 1; second < q.length; second += 1) {
+      if (
+        q[first].playerId !== q[second].playerId
+        && q[first].masterId === q[second].masterId
+        && q[first].bet === q[second].bet
+      ) {
+        pair = [first, second];
+        break;
+      }
+    }
+  }
+
+  if (pair) {
+    const [first, second] = pair;
+    const players = [q[first], q[second]];
+    q.splice(second, 1);
+    q.splice(first, 1);
+    processingQueues.add(queueType);
+    startWageredRoom(io, players, tokensToWin)
+      .catch((error) => {
+        const message = error instanceof WagerError
+          ? error.message
+          : 'Could not start the wagered match. Please try again.';
+        if (!(error instanceof WagerError)) {
+          console.error('Could not start wagered match:', error);
+        }
+        players.forEach((player) => player.socket.emit('match_error', message));
+      })
+      .finally(() => {
+        processingQueues.delete(queueType);
+        checkQueue(io, queueType);
+      });
+    return;
+  }
+
+  const expiredIndex = q.findIndex((player) =>
+    Date.now() - player.queuedAt >= QUEUE_WAIT_MS[queueType]
+  );
+  if (expiredIndex !== -1) {
+    const [player] = q.splice(expiredIndex, 1);
+    createRoom(io, [player], { tokensToWin });
+    setImmediate(() => checkQueue(io, queueType));
+    return;
+  }
 
   if (q.length === 0) {
     clearTimeout(queueTimers[queueType]);
@@ -671,12 +778,37 @@ function checkQueue(io, queueType) {
     return;
   }
   if (!queueTimers[queueType]) {
+    const remainingWait = Math.min(...q.map((player) =>
+      QUEUE_WAIT_MS[queueType] - (Date.now() - player.queuedAt)
+    ));
     queueTimers[queueType] = setTimeout(() => {
       queueTimers[queueType] = null;
-      const players = q.splice(0, 2);
-      if (players.length) createRoom(io, players, { tokensToWin }); // bots fill the remaining seat
       checkQueue(io, queueType);
-    }, QUEUE_WAIT_MS[queueType]);
+    }, Math.max(1, remainingWait));
+  }
+}
+
+async function startWageredRoom(io, players, tokensToWin) {
+  if (players.some((player) => !player.socket.connected)) {
+    throw new WagerError('A player disconnected before the match could start.');
+  }
+  const matchCode = `LUD-${randomUUID()}`;
+  const wager = await createWageredMatch(
+    players,
+    players[0].bet,
+    matchCode,
+    players[0].queueType
+  );
+  try {
+    createRoom(io, players, { tokensToWin, wager });
+  } catch (error) {
+    try {
+      await refundWageredMatch(wager.id);
+    } catch (refundError) {
+      console.error(`Could not refund wagered match ${matchCode}:`, refundError);
+      throw new WagerError('Match setup failed and the bet refund is pending. Please contact support.');
+    }
+    throw new WagerError('Match setup failed. Your bet has been refunded.');
   }
 }
 
@@ -808,13 +940,31 @@ function registerHandlers(io, socket) {
 
   socket.on('resume_game', () => resumeGame(io, socket));
 
-  socket.on('find_match', ({ name, requestId, queueType } = {}) => {
+  socket.on('find_match', ({ name, requestId, queueType, bet } = {}) => {
     if (socket.data.roomId) return;
+    if (!socket.data.playerId || !socket.data.masterId) {
+      socket.emit('match_error', 'Sign in as a Player to place a bet.');
+      return;
+    }
+    const betAmount = Number(bet);
+    if (!Number.isSafeInteger(betAmount) || betAmount <= 0 || betAmount > 5000) {
+      socket.emit('match_error', 'Choose a valid bet from 300 to 5,000 credits.');
+      return;
+    }
     leaveLobby(io, socket);
     removeFromQueues(io, socket);
     const matchmakingId = String(requestId || '').slice(0, 80);
     const type = queueType === 'tournament' ? 'tournament' : 'normal';
-    queues[type].push({ socket, name: cleanName(name), matchmakingId });
+    queues[type].push({
+      socket,
+      name: cleanName(name),
+      matchmakingId,
+      playerId: socket.data.playerId,
+      masterId: socket.data.masterId,
+      bet: betAmount,
+      queueType: type,
+      queuedAt: Date.now(),
+    });
     socket.emit('queued', { mode: 2, waitMs: QUEUE_WAIT_MS[type], requestId: matchmakingId });
     checkQueue(io, type);
   });
@@ -826,7 +976,10 @@ function registerHandlers(io, socket) {
     const seat = room?.seats.find((s) =>
       s.socketId === socket.id && s.matchmakingId === matchmakingId
     );
-    if (seat) replaceWithBot(io, socket);
+    if (seat) {
+      if (room.match) forfeitGame(io, room, seat, socket);
+      else replaceWithBot(io, socket);
+    }
   });
 
   // ----- Friend rooms -----

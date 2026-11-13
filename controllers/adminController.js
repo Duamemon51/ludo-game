@@ -128,7 +128,8 @@ async function getDashboard(req, res, next) {
       `SELECT COUNT(*) AS total FROM accounts WHERE role = 'PLAYER'`
     );
     const [[matchStats]] = await pool.execute(
-      `SELECT COUNT(*) AS matches_today, COALESCE(SUM(platform_fee), 0) AS fee_today
+      `SELECT COUNT(*) AS matches_today,
+        COALESCE(SUM(CASE WHEN status = 'COMPLETED' THEN platform_fee ELSE 0 END), 0) AS fee_today
        FROM matches WHERE started_at >= CURRENT_DATE() AND started_at < CURRENT_DATE() + INTERVAL 1 DAY`
     );
     const [[withdrawalStats]] = await pool.execute(
@@ -136,7 +137,7 @@ async function getDashboard(req, res, next) {
     );
     const [chartRows] = await pool.execute(
       `SELECT DATE(started_at) AS day, COUNT(*) AS matches_count,
-        COALESCE(SUM(platform_fee), 0) AS fee_income
+        COALESCE(SUM(CASE WHEN status = 'COMPLETED' THEN platform_fee ELSE 0 END), 0) AS fee_income
        FROM matches WHERE started_at >= CURRENT_DATE() - INTERVAL 6 DAY
        GROUP BY DATE(started_at) ORDER BY day`
     );
@@ -588,7 +589,7 @@ async function getMoney(req, res, next) {
   try {
     const [[row]] = await pool.execute(
       `SELECT
-        COALESCE((SELECT SUM(platform_fee) FROM matches), 0) AS platform_fees,
+        COALESCE((SELECT SUM(platform_fee) FROM matches WHERE status = 'COMPLETED'), 0) AS platform_fees,
         COALESCE((SELECT SUM(amount) FROM ledger WHERE entry_type = 'ADD'), 0) AS master_credits,
         COALESCE((SELECT SUM(amount) FROM ledger WHERE entry_type = 'WITHDRAW'), 0) AS withdrawals,
         COALESCE((SELECT SUM(balance) FROM wallets w JOIN accounts a ON a.id = w.account_id

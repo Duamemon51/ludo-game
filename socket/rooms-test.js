@@ -1,9 +1,21 @@
 const assert = require('assert');
 const engine = require('../game/engine');
+const { calculateWager } = require('../game/wager');
 const {
   autoAct, publicState, pickBotName, forfeitGame, rollDiceForCurrentPlayer,
   takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES,
 } = require('./rooms');
+
+assert.deepStrictEqual(calculateWager(300, 10), {
+  feePerPlayer: 30,
+  platformFee: 60,
+  payout: 540,
+});
+assert.deepStrictEqual(calculateWager(300, 0), {
+  feePerPlayer: 0,
+  platformFee: 0,
+  payout: 600,
+});
 
 const originalRandomForDiceTest = Math.random;
 try {
@@ -130,20 +142,20 @@ try {
 const originalRandomForNames = Math.random;
 Math.random = () => 0;
 try {
-  const usedNames = new Set(['oliver']);
+  const usedNames = new Set(['ahsan']);
   const botNames = [pickBotName(usedNames), pickBotName(usedNames)];
-  assert.deepStrictEqual(botNames, ['Ethan', 'Liam']);
+  assert.deepStrictEqual(botNames, ['Ahmed', 'Kashif']);
   assert.strictEqual(new Set(botNames.map((name) => name.toLowerCase())).size, botNames.length);
-  const previousGames = new Set(['oliver', ...botNames.map((name) => name.toLowerCase())]);
-  assert.strictEqual(pickBotName(previousGames), 'Noah');
+  const previousGames = new Set(['ahsan', ...botNames.map((name) => name.toLowerCase())]);
+  assert.strictEqual(pickBotName(previousGames), 'Hassan');
   const exhaustedNames = new Set([
     ...BOT_NAMES.map((name) => name.toLowerCase()),
     ...Array.from({ length: BOT_NAMES.length }, (_, index) =>
       `${BOT_NAMES[index]} ${index + 2}`.toLowerCase()
     ),
   ]);
-  assert.strictEqual(pickBotName(exhaustedNames), 'Oliver 48');
-  console.log('PASS: bots get unique English names that do not collide with player names');
+  assert.strictEqual(pickBotName(exhaustedNames), `${BOT_NAMES[0]} ${BOT_NAMES.length + 2}`);
+  console.log('PASS: bots get unique Pakistani names that do not collide with player names');
 } finally {
   Math.random = originalRandomForNames;
 }

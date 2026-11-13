@@ -146,12 +146,13 @@ async function getTournaments(req, res, next) {
   try {
     const [rows] = await pool.execute(
       `SELECT setting_key, setting_value FROM platform_settings
-       WHERE setting_key IN ('tournament_enabled', 'tournament_entry')`
+       WHERE setting_key IN ('tournament_enabled', 'tournament_entry', 'platform_fee_percent')`
     );
     const values = Object.fromEntries(rows.map((row) => [row.setting_key, row.setting_value]));
     res.json({
       enabled: values.tournament_enabled === 'true',
       entryFee: Number(values.tournament_entry ?? 300),
+      feePercent: Number(values.platform_fee_percent ?? 10),
       mode: 'Quick 1 vs 1',
     });
   } catch (error) {
