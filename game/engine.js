@@ -33,6 +33,7 @@ function getMoveDestination(state, color, from, dice) {
   if (state.captures[color] < CAPTURES_TO_UNLOCK_HOME && from <= LAST_TRACK) {
     return to % (LAST_TRACK + 1);
   }
+  if (from === LAST_TRACK) return to % (LAST_TRACK + 1);
   if (from <= LAST_TRACK - 1 && to > LAST_TRACK - 1) return to + 1;
   return to;
 }
