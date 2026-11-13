@@ -139,8 +139,8 @@ export default function GameDice({
             0 0 14px rgba(255, 255, 255, .35),
             inset 0 1.5px 1px rgba(255, 255, 255, .9),
             inset 0 -3px 4px rgba(0, 0, 0, .22);
-          -webkit-animation: gd-arrow-bounce 700ms cubic-bezier(.45, 0, .55, 1) infinite alternate;
-          animation: gd-arrow-bounce 700ms cubic-bezier(.45, 0, .55, 1) infinite alternate;
+          -webkit-animation: gd-arrow-bounce 500ms cubic-bezier(.45, 0, .55, 1) infinite alternate;
+          animation: gd-arrow-bounce 500ms cubic-bezier(.45, 0, .55, 1) infinite alternate;
         }
         @supports (color: color-mix(in srgb, red, blue)) {
           .gd.can-roll::before {
@@ -227,7 +227,6 @@ export default function GameDice({
         @media (prefers-reduced-motion: reduce) {
           .gd-hop { transition: none; }
           .gd-tumble { transition: none; }
-          .gd.can-roll::before, .gd.can-roll::after { -webkit-animation: none; animation: none; }
           .gd-tumble.rolling { animation: gd-tumble-reduced var(--roll) ease-out both !important; }
           @keyframes gd-tumble-reduced {
             from { transform: rotateX(-90deg) rotateY(90deg); }
