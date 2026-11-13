@@ -288,6 +288,7 @@ async function getUsersById(req, res, next) {
     );
     const [matches] = await pool.execute(
       `SELECT m.match_code, m.bet_per_player, m.platform_fee, m.payout, m.winner_id,
+        m.opponent_is_bot,
         m.status, m.started_at, m.finished_at, winner.display_name AS winner_name,
         GROUP_CONCAT(DISTINCT player.display_name ORDER BY player.id SEPARATOR ' vs ') AS players
        FROM match_players own
@@ -318,13 +319,19 @@ async function getUsersById(req, res, next) {
       })),
       games: matches.map((match) => ({
         id: match.match_code,
-        players: match.players || user.display_name,
+        players: match.opponent_is_bot ? `${match.players || user.display_name} vs Bot` : match.players || user.display_name,
         bet: Number(match.bet_per_player),
         fee: Number(match.platform_fee),
-        winner: match.winner_name || '',
-        result: match.winner_id == null ? 'In progress' : String(match.winner_id) === String(user.id) ? 'Won' : 'Lost',
+        winner: match.winner_name || (match.opponent_is_bot && match.status === 'COMPLETED' ? 'Bot' : ''),
+        result: match.status === 'CANCELLED'
+          ? 'Cancelled'
+          : match.status === 'IN_PROGRESS'
+            ? 'In progress'
+            : match.winner_id == null && match.opponent_is_bot
+              ? 'Bot won'
+              : String(match.winner_id) === String(user.id) ? 'Won' : 'Lost',
         payout: Number(match.payout),
-        status: match.status === 'IN_PROGRESS' ? 'Live' : 'Finished',
+        status: match.status === 'IN_PROGRESS' ? 'Live' : match.status === 'COMPLETED' ? 'Finished' : 'Cancelled',
         date: dateLabel(match.finished_at || match.started_at),
       })),
     });
@@ -677,6 +684,7 @@ async function getMatches(req, res, next) {
   try {
     const [rows] = await pool.execute(
       `SELECT m.id, m.match_code, m.bet_per_player, m.platform_fee, m.payout, m.winner_id,
+        m.opponent_is_bot,
         m.status, m.started_at, m.finished_at, winner.display_name AS winner_name,
         GROUP_CONCAT(DISTINCT player.display_name ORDER BY player.id SEPARATOR ' vs ') AS players
        FROM matches m
@@ -689,13 +697,19 @@ async function getMatches(req, res, next) {
     );
     res.json(rows.map((row) => ({
       id: row.match_code,
-      players: row.players || '—',
+      players: row.opponent_is_bot ? `${row.players || 'Player'} vs Bot` : row.players || '—',
       bet: Number(row.bet_per_player),
       fee: Number(row.platform_fee),
-      winner: row.winner_name || '',
+      winner: row.winner_name || (row.opponent_is_bot && row.status === 'COMPLETED' ? 'Bot' : ''),
       payout: Number(row.payout),
       status: row.status === 'IN_PROGRESS' ? 'Live' : row.status === 'COMPLETED' ? 'Finished' : 'Cancelled',
-      result: row.winner_name ? `Won: ${row.winner_name}` : row.status === 'IN_PROGRESS' ? 'In progress' : row.status,
+      result: row.winner_name
+        ? `Won: ${row.winner_name}`
+        : row.status === 'IN_PROGRESS'
+          ? 'In progress'
+          : row.status === 'CANCELLED'
+            ? 'Cancelled'
+            : row.opponent_is_bot ? 'Bot won' : row.status,
       date: dateLabel(row.finished_at || row.started_at),
       time: timeLabel(row.finished_at || row.started_at),
       startedAt: row.started_at,

@@ -11,24 +11,30 @@ class WagerError extends Error {
 
 const roundCredits = (amount) => Math.round((amount + Number.EPSILON) * 100) / 100;
 
-function calculateWager(bet, feePercent) {
+function calculateWager(bet, feePercent, botOpponent = false) {
   const feePerPlayer = roundCredits((bet * feePercent) / 100);
-  const platformFee = roundCredits(feePerPlayer * 2);
+  const totalFee = roundCredits(feePerPlayer * 2);
   return {
     feePerPlayer,
-    platformFee,
-    payout: roundCredits((bet * 2) - platformFee),
+    platformFee: botOpponent ? feePerPlayer : totalFee,
+    payout: roundCredits((bet * 2) - totalFee),
   };
 }
 
-async function createWageredMatch(players, bet, matchCode, queueType) {
+async function createWageredMatch(players, bet, matchCode, queueType, { botOpponent = false } = {}) {
   if (!Number.isSafeInteger(bet) || bet <= 0 || bet > MAX_BET) {
     throw new WagerError(`Bet must be between the minimum bet and ${MAX_BET} credits.`);
   }
   const playerIds = players.map((player) => String(player.playerId));
-  if (players.length !== 2 || !playerIds.every(Boolean) || playerIds[0] === playerIds[1]) {
-    throw new WagerError('A wagered match needs two different signed-in players.');
+  const expectedPlayers = botOpponent ? 1 : 2;
+  if (
+    players.length !== expectedPlayers
+    || !playerIds.every(Boolean)
+    || new Set(playerIds).size !== playerIds.length
+  ) {
+    throw new WagerError(`A wagered match needs ${expectedPlayers} signed-in player${expectedPlayers === 1 ? '' : 's'}.`);
   }
+  const playerPlaceholders = playerIds.map(() => '?').join(', ');
 
   return transaction(async (connection) => {
     const [settings] = await connection.execute(
@@ -52,32 +58,32 @@ async function createWageredMatch(players, bet, matchCode, queueType) {
       `SELECT p.id, p.master_id, p.status, m.status AS master_status
        FROM accounts p
        JOIN accounts m ON m.id = p.master_id AND m.role = 'MASTER'
-       WHERE p.id IN (?, ?) AND p.role = 'PLAYER'
+       WHERE p.id IN (${playerPlaceholders}) AND p.role = 'PLAYER'
        ORDER BY p.id
        FOR UPDATE`,
       playerIds
     );
-    if (accounts.length !== 2) throw new WagerError('A player account could not be verified.');
+    if (accounts.length !== expectedPlayers) throw new WagerError('A player account could not be verified.');
     if (accounts.some((account) => account.status !== 'ACTIVE' || account.master_status !== 'ACTIVE')) {
-      throw new WagerError('Both players must have active accounts to place a bet.');
+      throw new WagerError('All players must have active accounts to place a bet.');
     }
-    if (String(accounts[0].master_id) !== String(accounts[1].master_id)) {
+    if (!botOpponent && String(accounts[0].master_id) !== String(accounts[1].master_id)) {
       throw new WagerError('Players must belong to the same Master to play for credits.');
     }
 
     const [wallets] = await connection.execute(
       `SELECT account_id, balance FROM wallets
-       WHERE account_id IN (?, ?)
+       WHERE account_id IN (${playerPlaceholders})
        ORDER BY account_id
        FOR UPDATE`,
       playerIds
     );
-    if (wallets.length !== 2) throw new WagerError('A player wallet could not be found.');
+    if (wallets.length !== expectedPlayers) throw new WagerError('A player wallet could not be found.');
 
     const [heldRows] = await connection.execute(
       `SELECT user_id, SUM(amount) AS held
        FROM user_withdrawal_requests
-       WHERE user_id IN (?, ?) AND request_type = 'WITHDRAWAL' AND status = 'PENDING'
+       WHERE user_id IN (${playerPlaceholders}) AND request_type = 'WITHDRAWAL' AND status = 'PENDING'
        GROUP BY user_id`,
       playerIds
     );
@@ -88,12 +94,12 @@ async function createWageredMatch(players, bet, matchCode, queueType) {
       if (available < bet) throw new WagerError('A player does not have enough available credits for this bet.');
     }
 
-    const { feePerPlayer, platformFee, payout } = calculateWager(bet, feePercent);
+    const { feePerPlayer, platformFee, payout } = calculateWager(bet, feePercent, botOpponent);
     const [matchResult] = await connection.execute(
       `INSERT INTO matches
-        (match_code, master_id, bet_per_player, platform_fee, payout, status)
-       VALUES (?, ?, ?, ?, ?, 'IN_PROGRESS')`,
-      [matchCode, accounts[0].master_id, bet, platformFee, payout]
+        (match_code, master_id, bet_per_player, platform_fee, payout, opponent_is_bot, status)
+       VALUES (?, ?, ?, ?, ?, ?, 'IN_PROGRESS')`,
+      [matchCode, accounts[0].master_id, bet, platformFee, payout, botOpponent ? 1 : 0]
     );
     const matchId = String(matchResult.insertId);
 
@@ -115,6 +121,7 @@ async function createWageredMatch(players, bet, matchCode, queueType) {
       feePerPlayer,
       platformFee,
       payout,
+      botOpponent,
     };
   });
 }
@@ -122,18 +129,45 @@ async function createWageredMatch(players, bet, matchCode, queueType) {
 async function settleWageredMatch(matchId, winnerId) {
   return transaction(async (connection) => {
     const [matches] = await connection.execute(
-      `SELECT id, match_code, bet_per_player, platform_fee, payout, status
+      `SELECT id, match_code, bet_per_player, platform_fee, payout, winner_id,
+        opponent_is_bot, status
        FROM matches WHERE id = ? FOR UPDATE`,
       [matchId]
     );
     const match = matches[0];
     if (!match) throw new WagerError('The wagered match record could not be found.');
-    if (match.status !== 'IN_PROGRESS') {
+    if (match.status === 'CANCELLED') {
+      return {
+        cancelled: true,
+        bet: Number(match.bet_per_player),
+        feePerPlayer: 0,
+        platformFee: 0,
+        payout: 0,
+        botWon: false,
+      };
+    }
+    if (match.status === 'COMPLETED') {
       return {
         bet: Number(match.bet_per_player),
-        feePerPlayer: Number(match.platform_fee) / 2,
+        feePerPlayer: Number(match.platform_fee) / (match.opponent_is_bot ? 1 : 2),
         platformFee: Number(match.platform_fee),
         payout: Number(match.payout),
+        botWon: Boolean(match.opponent_is_bot && match.winner_id == null),
+      };
+    }
+
+    if (match.opponent_is_bot && winnerId == null) {
+      await connection.execute(
+        `UPDATE matches SET payout = 0, status = 'COMPLETED', finished_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [matchId]
+      );
+      return {
+        bet: Number(match.bet_per_player),
+        feePerPlayer: Number(match.platform_fee) / (match.opponent_is_bot ? 1 : 2),
+        platformFee: Number(match.platform_fee),
+        payout: 0,
+        botWon: true,
       };
     }
 
@@ -165,10 +199,12 @@ async function settleWageredMatch(matchId, winnerId) {
     );
 
     return {
+      cancelled: false,
       bet: Number(match.bet_per_player),
-      feePerPlayer: Number(match.platform_fee) / 2,
+      feePerPlayer: Number(match.platform_fee) / (match.opponent_is_bot ? 1 : 2),
       platformFee: Number(match.platform_fee),
       payout,
+      botWon: false,
     };
   });
 }
@@ -176,7 +212,7 @@ async function settleWageredMatch(matchId, winnerId) {
 async function refundWageredMatch(matchId) {
   return transaction(async (connection) => {
     const [matches] = await connection.execute(
-      `SELECT id, match_code, bet_per_player, status
+      `SELECT id, match_code, bet_per_player, opponent_is_bot, status
        FROM matches WHERE id = ? FOR UPDATE`,
       [matchId]
     );
@@ -188,7 +224,8 @@ async function refundWageredMatch(matchId) {
       'SELECT player_id FROM match_players WHERE match_id = ? ORDER BY player_id FOR UPDATE',
       [matchId]
     );
-    if (players.length !== 2) throw new WagerError('The wagered match player records are incomplete.');
+    const expectedPlayers = match.opponent_is_bot ? 1 : 2;
+    if (players.length !== expectedPlayers) throw new WagerError('The wagered match player records are incomplete.');
     const bet = Number(match.bet_per_player);
 
     for (const { player_id: playerId } of players) {

@@ -557,7 +557,7 @@ async function getMatches(req, res, next) {
     }
     const [rows] = await pool.execute(
       `SELECT gm.id, gm.match_code, gm.master_id, master.display_name AS master_name,
-        gm.bet_per_player, gm.platform_fee, gm.payout, gm.status, gm.started_at,
+        gm.bet_per_player, gm.platform_fee, gm.payout, gm.opponent_is_bot, gm.status, gm.started_at,
         winner.display_name AS winner_name,
         GROUP_CONCAT(player.display_name ORDER BY player.display_name SEPARATOR ', ') AS player_names
        FROM matches gm JOIN accounts master ON master.id = gm.master_id
@@ -568,18 +568,27 @@ async function getMatches(req, res, next) {
        GROUP BY gm.id ORDER BY gm.started_at DESC LIMIT 500`,
       params
     );
-    res.json(rows.map((row) => ({
-      id: row.match_code,
-      masterId: String(row.master_id),
-      masterName: row.master_name,
-      users: row.player_names ? row.player_names.split(', ') : [],
-      bet: Number(row.bet_per_player) * (row.player_names ? row.player_names.split(', ').length : 0),
-      fee: Number(row.platform_fee),
-      payout: Number(row.payout),
-      winner: row.winner_name || '',
-      result: row.status === 'IN_PROGRESS' ? 'In progress' : row.status === 'COMPLETED' ? 'Completed' : 'Cancelled',
-      date: dateLabel(row.started_at),
-    })));
+    res.json(rows.map((row) => {
+      const users = row.player_names ? row.player_names.split(', ') : [];
+      const realPlayerCount = users.length;
+      if (row.opponent_is_bot) users.push('Bot');
+      return {
+        id: row.match_code,
+        masterId: String(row.master_id),
+        masterName: row.master_name,
+        users,
+        bet: Number(row.bet_per_player) * realPlayerCount,
+        fee: Number(row.platform_fee),
+        payout: Number(row.payout),
+        winner: row.winner_name || (row.opponent_is_bot && row.status === 'COMPLETED' ? 'Bot' : ''),
+        result: row.status === 'IN_PROGRESS'
+          ? 'In progress'
+          : row.status === 'CANCELLED'
+            ? 'Cancelled'
+            : row.opponent_is_bot && !row.winner_name ? 'Bot wins' : 'Completed',
+        date: dateLabel(row.started_at),
+      };
+    }));
   } catch (error) {
     next(error);
   }
