@@ -44,6 +44,18 @@ assert.strictEqual(r.reachedFinish, false);
 assert.deepStrictEqual(engine.getValidMoves(s, 'red', 2), [0]);
 console.log('PASS: track wraps until the player captures');
 
+// A token past the gate must finish another lap after a teammate unlocks home.
+s = engine.createGame(['red', 'yellow']);
+s.captures.red = engine.CAPTURES_TO_UNLOCK_HOME;
+s.tokens.red[0] = 51;
+assert.deepStrictEqual(engine.getValidMoves(s, 'red', 1), [0]);
+r = engine.applyMove(s, 'red', 0, 1);
+assert.strictEqual(s.tokens.red[0], 0);
+s.tokens.red[0] = 50;
+r = engine.applyMove(s, 'red', 0, 1);
+assert.strictEqual(s.tokens.red[0], 52);
+console.log('PASS: a token at 51 loops before entering an unlocked home lane');
+
 // A first capture unlocks the home lane without teleporting the token there.
 s = engine.createGame(['red', 'yellow']);
 s.tokens.red[0] = 2;
