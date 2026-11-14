@@ -194,6 +194,7 @@ function TrophyIcon() {
 
 const CSS = `
 .hg-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-top:22px}
+.hg-cards-single{grid-template-columns:1fr}
 .hg-card{position:relative;height:112px;padding:0;border:0;border-radius:16px;cursor:pointer;color:#fff;
   font-family:'Lilita One',sans-serif;-webkit-tap-highlight-color:transparent;
   box-shadow:0 4px 0 rgba(0,0,0,.35),inset 0 2px 0 rgba(255,255,255,.35)}
@@ -209,11 +210,13 @@ const CSS = `
 .hg-text small{font-size:11px;opacity:.9}
 `;
 
-export default function HomeGameCards({ loading, active, onChooseMatch, onChooseTournament }) {
+export default function HomeGameCards({
+  loading, active, onChooseMatch, onChooseTournament, showTournament = true,
+}) {
   return (
     <>
       <style>{CSS}</style>
-      <div className="hg-cards">
+      <div className={`hg-cards${showTournament ? '' : ' hg-cards-single'}`}>
         <button type="button" className="hg-card hg-duel" disabled={loading} onClick={onChooseMatch}>
           <span className="hg-icon" aria-hidden="true"><DuelIcon /></span>
           <span className="hg-text">
@@ -221,13 +224,15 @@ export default function HomeGameCards({ loading, active, onChooseMatch, onChoose
             <small>Min bet 300</small>
           </span>
         </button>
-        <button type="button" className="hg-card hg-tour" disabled={loading || !active} onClick={onChooseTournament}>
-          <span className="hg-icon" aria-hidden="true"><TrophyIcon /></span>
-          <span className="hg-text">
-            <strong>Tournament</strong>
-            <small>Join a bracket</small>
-          </span>
-        </button>
+        {showTournament && (
+          <button type="button" className="hg-card hg-tour" disabled={loading || !active} onClick={onChooseTournament}>
+            <span className="hg-icon" aria-hidden="true"><TrophyIcon /></span>
+            <span className="hg-text">
+              <strong>Tournament</strong>
+              <small>Join a bracket</small>
+            </span>
+          </button>
+        )}
       </div>
     </>
   );

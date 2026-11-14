@@ -522,6 +522,33 @@ button { touch-action: manipulation; font-family: inherit; }
   overflow: hidden;
   animation: resultEnter 650ms cubic-bezier(.16, 1.3, .35, 1) both;
 }
+.result-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: #713f12;
+  background: rgba(124, 45, 18, 0.08);
+  font-size: 25px;
+  line-height: 1;
+  cursor: pointer;
+}
+.result-close svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.result-close:hover { background: rgba(124, 45, 18, 0.16); }
+.result-close:focus-visible { outline: 2px solid #713f12; outline-offset: 2px; }
 .result-card.win {
   border: 2px solid #fff3bd;
   background:

@@ -123,6 +123,8 @@ export default function App() {
   const matchmakingRequestRef = useRef(null);
   const cancelledMatchmakingRef = useRef(false);
   const resultTimerRef = useRef(null);
+  const leaveRequestRef = useRef(false);
+  const pendingOverRef = useRef(null);
   const noticeTimerRef = useRef(null);
   const statusRef = useRef(status);
   statusRef.current = status;
@@ -284,6 +286,8 @@ export default function App() {
       setConnected(true);
       matchmakingRequestRef.current = null;
       cancelledMatchmakingRef.current = false;
+      leaveRequestRef.current = false;
+      pendingOverRef.current = null;
       clearTimeout(resultTimerRef.current);
       playMatchFoundChime();
       setMatchWinAmount(wager?.payout ?? null);
@@ -308,6 +312,10 @@ export default function App() {
       showNotice(message);
     };
     const onOver = (result) => {
+      if (leaveRequestRef.current) {
+        pendingOverRef.current = result;
+        return;
+      }
       setGameResult(result);
       clearTimeout(resultTimerRef.current);
       setStatus('finishing');
@@ -468,6 +476,8 @@ export default function App() {
   };
   const reset = () => {
     clearTimeout(resultTimerRef.current);
+    leaveRequestRef.current = false;
+    pendingOverRef.current = null;
     setGame(null);
     setGameResult(null);
     setMatchWinAmount(null);
@@ -476,14 +486,41 @@ export default function App() {
   };
   const leaveGame = () => {
     if (!connected) return;
+    leaveRequestRef.current = true;
+    pendingOverRef.current = null;
     setLeaving(true);
     socket.timeout(5000).emit('leave_game', (error, result) => {
       setLeaving(false);
       if (error || !result?.ok) {
+        leaveRequestRef.current = false;
         showNotice('Could not leave the game. Please try again.');
+        if (pendingOverRef.current) {
+          setGameResult(pendingOverRef.current);
+          pendingOverRef.current = null;
+          clearTimeout(resultTimerRef.current);
+          setStatus('finishing');
+          resultTimerRef.current = setTimeout(() => setStatus('over'), RESULT_REVEAL_MS);
+        }
         return;
       }
       setLeaveOpen(false);
+      pendingOverRef.current = null;
+      if (result.forfeited && result.winner) {
+        setGame((current) => current ? { ...current, winner: result.winner } : current);
+        setGameResult({ winner: result.winner, forfeited: true });
+        clearTimeout(resultTimerRef.current);
+        setStatus('over');
+        return;
+      }
+      leaveRequestRef.current = false;
+      if (result.winner) {
+        setGame((current) => current ? { ...current, winner: result.winner } : current);
+        setGameResult({ winner: result.winner });
+        setStatus('finishing');
+        clearTimeout(resultTimerRef.current);
+        resultTimerRef.current = setTimeout(() => setStatus('over'), RESULT_REVEAL_MS);
+        return;
+      }
       reset();
     });
   };
@@ -733,8 +770,8 @@ export default function App() {
       )}
 
       {status === 'over' && game && (
-        <div className={`overlay game-result ${game.winner === myColor && !gameResult?.cancelled ? 'victory' : 'defeat'}`} inert={!connected}>
-          {game.winner === myColor && !gameResult?.cancelled && (
+        <div className={`overlay game-result ${game.winner === myColor && !gameResult?.cancelled && !gameResult?.forfeited ? 'victory' : 'defeat'}`} inert={!connected}>
+          {game.winner === myColor && !gameResult?.cancelled && !gameResult?.forfeited && (
             <div className="victory-confetti" aria-hidden="true">
               {Array.from({ length: 32 }, (_, i) => (
                 <span
@@ -748,16 +785,29 @@ export default function App() {
               ))}
             </div>
           )}
-          <div className={`card center result-card ${game.winner === myColor && !gameResult?.cancelled ? 'win' : 'loss'}`}>
+          <div className={`card center result-card ${game.winner === myColor && !gameResult?.cancelled && !gameResult?.forfeited ? 'win' : 'loss'}`}>
+            {(game.winner !== myColor || gameResult?.cancelled || gameResult?.forfeited) && (
+              <button
+                className="result-close"
+                type="button"
+                aria-label="Close and return to home"
+                onClick={reset}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m7 7 10 10M17 7 7 17" />
+                </svg>
+              </button>
+            )}
             <div className="result-icon" aria-hidden="true">
-              {gameResult?.cancelled ? '↩' : game.winner === myColor ? '🏆' : '🎲'}
+              {gameResult?.cancelled || gameResult?.forfeited ? '↩' : game.winner === myColor ? '🏆' : '🎲'}
             </div>
             <span className="result-kicker">
-              {gameResult?.cancelled ? 'MATCH CANCELLED' : game.winner === myColor ? 'CHAMPION' : 'GAME OVER'}
+              {gameResult?.forfeited ? 'YOU LEFT' : gameResult?.cancelled ? 'MATCH CANCELLED' : game.winner === myColor ? 'CHAMPION' : 'GAME OVER'}
             </span>
-            <h2>{gameResult?.cancelled ? 'Match cancelled' : game.winner === myColor ? 'You won!' : `${cap(game.winner)} wins`}</h2>
+            <h2>{gameResult?.forfeited ? 'You left the game' : gameResult?.cancelled ? 'Match cancelled' : game.winner === myColor ? 'You won!' : `${cap(game.winner)} wins`}</h2>
             <p>{gameResult?.cancelled
               ? 'Your bet has been refunded. No platform fee was charged.'
+              : gameResult?.forfeited ? 'Your opponent won by forfeit.'
               : game.winner === myColor ? 'Amazing game. You conquered the board!' : 'Better luck next game!'}</p>
             {gameResult?.wager && (
               <p>
@@ -766,7 +816,9 @@ export default function App() {
                   : `Lost: ${gameResult.wager.bet.toLocaleString()} credits`}
               </p>
             )}
-            <button className="btn" onClick={reset}>Play again</button>
+            {game.winner === myColor && !gameResult?.cancelled && (
+              <button className="btn" onClick={reset}>Play again</button>
+            )}
           </div>
         </div>
       )}

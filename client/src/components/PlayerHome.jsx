@@ -5,6 +5,7 @@ import HomeGameCards from './HomeGameCards';
 const PAWN_COLORS = ['#e53935', '#3fa34d', '#fcc419', '#1e88e5'];
 const TOURNAMENT = { id: 'quick-1v1', name: 'Quick 1 vs 1' };
 const TOURNAMENT_BETS = [300, 500, 1000, 2000, 3000, 4000, 5000];
+const SHOW_TOURNAMENT_UI = false;
 
 function Icon({ children }) {
   return (
@@ -1067,7 +1068,7 @@ export default function PlayerHome({
           <nav className="ph-nav" aria-label="Player menu">
             {[
               ['home', 'Home'],
-              ['tournaments', 'Tournaments'],
+              ...(SHOW_TOURNAMENT_UI ? [['tournaments', 'Tournaments']] : []),
               ['wallet', 'Wallet'],
               ['history', 'History'],
               ['journey', 'Journey'],
@@ -1081,11 +1082,12 @@ export default function PlayerHome({
           {page === 'home' && (
             <section className="ph-panel ph-panel-home">
               <h2>Choose your game</h2>
-              <p>Play one-on-one or enter a tournament.</p>
+              <p>{SHOW_TOURNAMENT_UI ? 'Play one-on-one or enter a tournament.' : 'Play one-on-one.'}</p>
 
               <HomeGameCards
                 loading={loading}
                 active={active}
+                showTournament={SHOW_TOURNAMENT_UI}
                 onChooseMatch={() => setPage('match')}
                 onChooseTournament={() => setPage('tournaments')}
               />
@@ -1146,7 +1148,7 @@ export default function PlayerHome({
             </section>
           )}
 
-          {page === 'tournaments' && (
+          {SHOW_TOURNAMENT_UI && page === 'tournaments' && (
             <section className="ph-panel ph-tournament-panel">
               <PanelHead title="Quick 1 vs 1" onBack={() => setPage('home')} />
               <p>Choose your entry amount to join a single 1 vs 1 match.</p>
