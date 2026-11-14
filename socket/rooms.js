@@ -14,6 +14,7 @@ const MOVE_SETTLE_MS = 350;
 const MAX_MISSED = 1;
 const RECONNECT_MS = 60000; // how long an empty room waits for players to come back
 const GAME_CHAT_ENABLED = false;
+const HUMAN_SIX_CHANCE = 0.20;
 const BOT_SIX_CHANCE = {
   expert: 0.7,
   hard: 0.5,
@@ -121,7 +122,11 @@ function findCaptureDice(game, color, maxDice = 6) {
 
 function rollDiceForCurrentPlayer(room) {
   const seat = seatOf(room, room.game.turn);
-  const sixChance = seat?.isBot ? BOT_SIX_CHANCE[seat.level] : null;
+  if (!seat?.isBot) {
+    if (Math.random() < HUMAN_SIX_CHANCE) return 6;
+    return Math.floor(Math.random() * 5) + 1;
+  }
+  const sixChance = BOT_SIX_CHANCE[seat.level];
   if (sixChance === undefined || sixChance === null) return engine.rollDice();
   const expertSixCooldown = seat.level === 'expert'
     ? Math.max(0, seat.sixCooldown || 0)
@@ -1022,13 +1027,17 @@ function registerHandlers(io, socket) {
   socket.on('leave_room', () => leaveLobby(io, socket));
 
   socket.on('leave_game', (ack) => {
-    const acknowledge = () => {
-      if (typeof ack === 'function') ack({ ok: true });
+    const acknowledge = (result = { ok: true }) => {
+      if (typeof ack === 'function') ack(result);
     };
     const room = rooms.get(socket.data.roomId);
     const seat = room?.seats.find((candidate) => candidate.socketId === socket.id);
-    if (room && seat) forfeitGame(io, room, seat, socket);
-    acknowledge();
+    const forfeited = Boolean(room && seat && forfeitGame(io, room, seat, socket));
+    acknowledge({
+      ok: true,
+      forfeited,
+      winner: room?.game?.winner ?? null,
+    });
   });
 
   socket.on('start_room', () => {
@@ -1143,5 +1152,5 @@ function registerHandlers(io, socket) {
 
 module.exports = {
   registerHandlers, autoAct, publicState, pickBotName, forfeitGame,
-  rollDiceForCurrentPlayer, takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES,
+  rollDiceForCurrentPlayer, takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE,
 };
