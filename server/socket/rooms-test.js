@@ -3,7 +3,7 @@ const engine = require('../game/engine');
 const { calculateWager } = require('../game/wager');
 const {
   autoAct, publicState, pickBotName, forfeitGame, rollDiceForCurrentPlayer,
-  takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES,
+  takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE,
 } = require('./rooms');
 
 assert.deepStrictEqual(calculateWager(300, 10), {
@@ -134,12 +134,19 @@ try {
     seats: [{ color: 'red', isBot: true, level: 'expert' }],
   }), 3, 'bot should guarantee the die value needed to capture');
 
-  Math.random = () => 0.999;
+  Math.random = () => HUMAN_SIX_CHANCE - 0.001;
   assert.strictEqual(rollDiceForCurrentPlayer({
     game: engine.createGame(['red', 'yellow']),
     seats: [{ color: 'red', isBot: false, level: 'medium' }],
-  }), 6);
-  console.log('PASS: bots guarantee available captures and humans keep fair dice');
+  }), 6, 'human dice should roll 6 within the configured 20% chance');
+
+  const humanRollValues = [HUMAN_SIX_CHANCE, 0.999];
+  Math.random = () => humanRollValues.shift();
+  assert.strictEqual(rollDiceForCurrentPlayer({
+    game: engine.createGame(['red', 'yellow']),
+    seats: [{ color: 'red', isBot: false, level: 'medium' }],
+  }), 5, 'human rolls outside the 20% six chance should produce a non-six');
+  console.log('PASS: bots keep their configured six chances and humans have a 20% six chance');
 } finally {
   Math.random = originalRandomForDiceTest;
 }
@@ -356,12 +363,13 @@ async function testCaptureBonusSixGrantsAnotherRoll() {
   const originalRandomForCaptureTest = Math.random;
 
   try {
-    Math.random = () => 0.999;
+    Math.random = () => 0.1;
     autoAct(captureIo, captureRoom);
     await new Promise((resolve) => setTimeout(resolve, 700));
     assert.strictEqual(captureRoom.phase, 'capture-roll');
 
-    Math.random = () => 0.2;
+    const secondRollRandomValues = [0.3, 0.2];
+    Math.random = () => secondRollRandomValues.shift();
     autoAct(captureIo, captureRoom);
     await new Promise((resolve) => setTimeout(resolve, 700));
     assert.strictEqual(captureRoom.phase, 'move');
