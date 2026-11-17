@@ -156,8 +156,8 @@ export default function PlayerHome({
   const [avatarError, setAvatarError] = useState('');
   const fileInputRef = useRef(null);
   const historyFilterRef = useRef(null);
-  const historyPageSize = 5;
-  const journeyPageSize = 5;
+  const historyPageSize = 6;
+  const journeyPageSize = 6;
   const avatarKey = `ludo-avatar:${profile?.id ?? profile?.name ?? name ?? 'player'}`;
   const loadPlayerAvatar = useCallback((playerProfile) => {
     const key = `ludo-avatar:${playerProfile?.id ?? playerProfile?.name ?? name ?? 'player'}`;
@@ -944,11 +944,11 @@ export default function PlayerHome({
         .ph-history-filter-option svg { width: 16px; height: 16px; color: #8a6400; }
         .ph-history-filter-option:focus-visible { outline: 2px solid #a56b06; outline-offset: 1px; }
         @keyframes ph-filter-open { from { opacity: 0; transform: translateY(-4px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
-        .ph-history-results { display: flex; height: 230px; flex-direction: column; }
-        .ph-history-list { height: 230px; gap: 5px; overflow: hidden; }
+        .ph-history-results { display: flex; height: 290px; flex-direction: column; }
+        .ph-history-list { height: 290px; gap: 5px; overflow: hidden; }
+        .ph-history-empty { display: grid; flex: 1; min-height: 290px; place-items: center; margin: 0; text-align: center; }
         .ph-history-item { flex: 0 0 42px; min-height: 42px; padding: 6px 8px; }
         .ph-history-item .ph-item-ico { width: 28px; height: 28px; }
-        .ph-history-empty { display: grid; flex: 1; min-height: 230px; place-items: center; margin: 0; text-align: center; }
         .ph-history-pagination { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 34px; margin-top: 5px; }
         .ph-history-pagination button { display: inline-grid; width: 30px; height: 30px; place-items: center; border: 1px solid #ddc995; border-radius: 50%; padding: 0; color: #684d2e; background: linear-gradient(180deg, #fffdf5, #f3e4bd); box-shadow: 0 1px 3px #5b3a1e20, inset 0 1px 0 #fff; }
         .ph-history-pagination button:disabled { opacity: .4; cursor: not-allowed; box-shadow: inset 0 1px 0 #fff; }
@@ -958,6 +958,7 @@ export default function PlayerHome({
         .ph-history-pagination button svg { width: 15px; height: 15px; }
         .ph-history-pagination span { min-width: 58px; color: #806646; font-size: 11px; font-weight: 700; text-align: center; }
         .ph-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
+        .ph-history-results > .ph-history-list { margin-top: 0; }
         .ph-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; background: #fff9e9; box-shadow: inset 0 0 0 1px #ead9aa; }
         .ph-item-ico { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: #fff; background: #806646; font-family: 'Lilita One', sans-serif; font-size: 14px; }
         .ph-item-ico.win { background: #3fa34d; }
