@@ -1,3 +1,5 @@
+import './HomeGameCards.css';
+
 const SOFT = { filter: "drop-shadow(0 2px 1px rgba(0,0,0,.25))", display: "block" };
 
 function Pawn({ x, y = 0, k = 1, id, light, mid, dark }) {
@@ -120,6 +122,24 @@ function DuelIcon() {
   );
 }
 
+function PrivateIcon() {
+  return (
+    <svg viewBox="0 6 100 74" fill="none" aria-hidden="true" style={SOFT}>
+      <ellipse cx="50" cy="69" rx="39" ry="4" fill="#000" opacity=".2" />
+      <path d="M50 10 92 32 50 54 8 32Z" fill="#f3e5c4" stroke="#fff3cc" strokeWidth="2" />
+      <path d="M50 10 50 32 8 32Z" fill="#e53935" />
+      <path d="M50 10 92 32 50 32Z" fill="#3fa34d" />
+      <path d="M8 32 50 32 50 54Z" fill="#1e88e5" />
+      <path d="M50 32 92 32 50 54Z" fill="#fcc419" />
+      <path d="m50 22 19 10-19 10-19-10Z" fill="#fffdf5" stroke="#d7c18e" strokeWidth="1.5" />
+      <path d="M42 37v-3a8 8 0 0 1 16 0v3" stroke="#573516" strokeWidth="4" strokeLinecap="round" />
+      <rect x="38" y="36" width="24" height="19" rx="4" fill="#573516" stroke="#fff3cc" strokeWidth="1.5" />
+      <circle cx="50" cy="44" r="2" fill="#fff3cc" />
+      <path d="M50 45v4" stroke="#fff3cc" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function TrophyIcon() {
   return (
     <svg viewBox="0 6 100 74" fill="none" aria-hidden="true" style={SOFT}>
@@ -192,36 +212,24 @@ function TrophyIcon() {
   );
 }
 
-const CSS = `
-.hg-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-top:22px}
-.hg-cards-single{grid-template-columns:1fr}
-.hg-card{position:relative;height:112px;padding:0;border:0;border-radius:16px;cursor:pointer;color:#fff;
-  font-family:'Lilita One',sans-serif;-webkit-tap-highlight-color:transparent;
-  box-shadow:0 4px 0 rgba(0,0,0,.35),inset 0 2px 0 rgba(255,255,255,.35)}
-.hg-card:active:not(:disabled){transform:translateY(2px);box-shadow:0 2px 0 rgba(0,0,0,.35),inset 0 2px 0 rgba(255,255,255,.35)}
-.hg-card:disabled{filter:grayscale(.5) brightness(.8);cursor:default}
-.hg-duel{background:linear-gradient(180deg,#ffb83d,#f2840a)}
-.hg-tour{background:linear-gradient(180deg,#ab82ff,#6a3fe0)}
-.hg-icon{position:absolute;left:0;right:0;top:-20px;height:94px;pointer-events:none}
-.hg-icon svg{width:100%;height:100%}
-.hg-text{position:absolute;left:0;right:0;bottom:0;height:38px;border-radius:0 0 16px 16px;
-  background:rgba(0,0,0,.22);display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.05}
-.hg-text strong{font-size:16px;font-weight:400;letter-spacing:.3px;text-shadow:0 1px 0 rgba(0,0,0,.3)}
-.hg-text small{font-size:11px;opacity:.9}
-`;
-
 export default function HomeGameCards({
-  loading, active, onChooseMatch, onChooseTournament, showTournament = true,
+  loading, active, connected = true, onChooseMatch, onChoosePrivate, onChooseTournament, showTournament = true,
 }) {
   return (
     <>
-      <style>{CSS}</style>
-      <div className={`hg-cards${showTournament ? '' : ' hg-cards-single'}`}>
+      <div className="hg-cards">
         <button type="button" className="hg-card hg-duel" disabled={loading} onClick={onChooseMatch}>
           <span className="hg-icon" aria-hidden="true"><DuelIcon /></span>
           <span className="hg-text">
             <strong>1 vs 1</strong>
             <small>Min bet 300</small>
+          </span>
+        </button>
+        <button type="button" className="hg-card hg-private" disabled={loading || !active || !connected} onClick={onChoosePrivate}>
+          <span className="hg-icon" aria-hidden="true"><PrivateIcon /></span>
+          <span className="hg-text">
+            <strong>Private table</strong>
+            <small>2 or 4 players</small>
           </span>
         </button>
         {showTournament && (

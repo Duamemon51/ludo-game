@@ -3,8 +3,8 @@ import { socket } from './socket';
 import Board from './components/Board';
 import PlayerPanel from './components/PlayerPanel';
 import ChatSheet from './components/ChatSheet';
-import Bubble from './components/Bubble';
 import PlayerHome from './components/PlayerHome';
+import PrivateLobby from './components/PrivateLobby';
 import MatchmakingScreen from './components/MatchmakingScreen';
 import LoginScreen from './components/LoginScreen';
 import MasterDashboard from './components/MasterDashboard';
@@ -458,9 +458,9 @@ export default function App() {
       : null);
     socket.emit('find_match', { mode: 2, name: cleanName(), requestId, queueType, bet: numericBet });
   };
-  const createRoom = (mode) => socket.emit('create_room', { mode, name: cleanName() });
+  const createRoom = (mode, bet) => socket.emit('create_room', { mode, bet, name: cleanName() });
   const joinRoom = () => {
-    if (joinCode.trim().length < 3) return showNotice('Enter the room code first.');
+    if (joinCode.trim().length !== 5) return showNotice('Enter the 5-character room code first.');
     socket.emit('join_room', { code: joinCode.trim(), name: cleanName() });
   };
   const cancel = () => {
@@ -665,6 +665,10 @@ export default function App() {
           onNameChange={setName}
           onAvatarChange={setPlayerAvatar}
           onFindMatch={findMatch}
+          onCreateRoom={createRoom}
+          joinCode={joinCode}
+          onJoinCodeChange={setJoinCode}
+          onJoinRoom={joinRoom}
           token={authSession?.token}
           onSignOut={signOut}
           connected={connected}
@@ -674,66 +678,18 @@ export default function App() {
       {status === 'queued' && <MatchmakingScreen secondsLeft={queueLeft} onCancel={cancel} />}
 
       {status === 'lobby' && lobby && (
-        <div className="card center">
-          <label className="label">Room code</label>
-          <div className="code-box">{lobby.code}</div>
-          <div className="row">
-            <button className="btn dark" onClick={copyLink}>Copy link</button>
-            <a className="btn green linkbtn" href={whatsappLink} target="_blank" rel="noreferrer">
-              WhatsApp
-            </a>
-          </div>
-
-          <div className="lobby-slots">
-            {Array.from({ length: lobby.mode }, (_, i) => {
-              const p = lobby.players[i];
-              if (!p) {
-                return (
-                  <div key={i} className="lslot">
-                    <div className="avatar-ring empty">
-                      <span className="avatar ghost">🤖</span>
-                    </div>
-                    <div className="pname dark">Bot will join</div>
-                  </div>
-                );
-              }
-              const isMe = p.id === socket.id;
-              const b = bubbles[p.id];
-              return (
-                <div key={p.id} className="lslot">
-                  <button
-                    type="button"
-                    className={'avatar-ring' + (isMe ? ' me' : '')}
-                    style={{ '--c': '#6366f1', '--pct': '100%' }}
-                    disabled={!isMe || !GAME_CHAT_ENABLED}
-                    onClick={() => GAME_CHAT_ENABLED && setChatOpen(true)}
-                  >
-                    <span className="avatar">{p.name.charAt(0).toUpperCase()}</span>
-                    {GAME_CHAT_ENABLED && isMe && <span className="chat-badge">💬</span>}
-                  </button>
-                  <div className="pname dark">
-                    {p.name}
-                    {p.id === lobby.hostId ? ' 👑' : ''}
-                    {isMe ? ' (you)' : ''}
-                  </div>
-                  {GAME_CHAT_ENABLED && b && (
-                    <Bubble key={b.id} text={b.text} vertical="bottom" side="center" />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          {GAME_CHAT_ENABLED && <p className="hint">Tap your avatar to chat 💬</p>}
-
-          {isHost ? (
-            <button className="btn" onClick={() => socket.emit('start_room')}>
-              Start game
-            </button>
-          ) : (
-            <p className="hint">Waiting for the host to start...</p>
-          )}
-          <button className="btn alt" onClick={leaveLobby}>Leave room</button>
-        </div>
+        <PrivateLobby
+          lobby={lobby}
+          playerId={socket.id}
+          bubbles={bubbles}
+          chatEnabled={GAME_CHAT_ENABLED}
+          isHost={isHost}
+          whatsappLink={whatsappLink}
+          onCopyLink={copyLink}
+          onOpenChat={() => setChatOpen(true)}
+          onStart={() => socket.emit('start_room')}
+          onLeave={leaveLobby}
+        />
       )}
 
       {inGame && (

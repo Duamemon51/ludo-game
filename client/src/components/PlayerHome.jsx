@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { playerRequest, PLAYER_SERVER_UNAVAILABLE } from '../playerApi';
 import HomeGameCards from './HomeGameCards';
+import PrivateTable from './PrivateTable';
 
 const PAWN_COLORS = ['#e53935', '#3fa34d', '#fcc419', '#1e88e5'];
 const TOURNAMENT = { id: 'quick-1v1', name: 'Quick 1 vs 1' };
@@ -129,7 +130,8 @@ function resizeImage(file, size) {
 }
 
 export default function PlayerHome({
-  name, onNameChange, onAvatarChange, onFindMatch, token, onSignOut, connected = true,
+  name, onNameChange, onAvatarChange, onFindMatch, onCreateRoom, joinCode,
+  onJoinCodeChange, onJoinRoom, token, onSignOut, connected = true,
 }) {
   const [page, setPage] = useState('home');
   const [bet, setBet] = useState(300);
@@ -509,6 +511,7 @@ export default function PlayerHome({
         .ph-tournament-error { margin: 10px 0 0; color: #a52e2e !important; font-size: 12px; }
         .ph-primary { border: 0; border-radius: 12px; padding: 12px 20px; color: #4a3000; background: linear-gradient(180deg, #fff1a8, #fcc419 55%, #e0a000); box-shadow: 0 4px 0 #9a6f00; font-weight: 800; }
         .ph-primary:disabled { opacity: .5; cursor: not-allowed; }
+        .ph-panel-home > .ph-primary { width: 100%; margin-top: 12px; }
         .ph-back { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; border: 1px solid #d5a928; border-radius: 12px; padding: 8px 15px; color: #55340b; background: linear-gradient(180deg, #fff8df, #f3dfa9); box-shadow: inset 0 1px 0 #fff, 0 3px 0 #c39729, 0 5px 9px #3b241225; font-weight: 800; transition: transform .12s ease, box-shadow .12s ease, filter .12s ease; }
         .ph-back:hover { filter: brightness(1.04); transform: translateY(-1px); box-shadow: inset 0 1px 0 #fff, 0 4px 0 #c39729, 0 7px 12px #3b24122e; }
         .ph-back:active { transform: translateY(2px); box-shadow: inset 0 1px 0 #fff, 0 1px 0 #c39729; }
@@ -1082,18 +1085,38 @@ export default function PlayerHome({
           {page === 'home' && (
             <section className="ph-panel ph-panel-home">
               <h2>Choose your game</h2>
-              <p>{SHOW_TOURNAMENT_UI ? 'Play one-on-one or enter a tournament.' : 'Play one-on-one.'}</p>
+              <p>{SHOW_TOURNAMENT_UI ? 'Play one-on-one, create a private table or enter a tournament.' : 'Play one-on-one or create a private table.'}</p>
 
               <HomeGameCards
                 loading={loading}
                 active={active}
+                connected={connected}
                 showTournament={SHOW_TOURNAMENT_UI}
                 onChooseMatch={() => setPage('match')}
+                onChoosePrivate={() => setPage('private')}
                 onChooseTournament={() => setPage('tournaments')}
               />
 
               {!loading && !active && <div className="ph-lock">Your account is inactive. You can view your wallet and history, but cannot start a game.</div>}
             </section>
+          )}
+
+          {page === 'private' && (
+            <PrivateTable
+              loading={loading}
+              active={active}
+              connected={connected}
+              joinCode={joinCode}
+              bet={bet}
+              onBetChange={setBet}
+              betOptions={TOURNAMENT_BETS}
+              availableBalance={availableBalance}
+              feePercent={feePercent}
+              onJoinCodeChange={onJoinCodeChange}
+              onJoinRoom={onJoinRoom}
+              onCreateRoom={onCreateRoom}
+              onBack={() => setPage('home')}
+            />
           )}
 
           {page === 'match' && (
