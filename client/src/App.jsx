@@ -616,7 +616,7 @@ export default function App() {
   }
 
   return (
-    <div className={'app' + (homeScreen ? ' home-screen' : '') + (inGame ? ' in-game' : '') + (homeView === 'login' ? ' login-screen' : '')}>
+    <div className={'app' + (homeScreen ? ' home-screen' : '') + (inGame ? ' in-game' : '') + (status === 'lobby' ? ' lobby-screen' : '') + (homeView === 'login' ? ' login-screen' : '')}>
       {notice && (
         <div className={`toast toast-${noticeDetails?.type || 'info'}`} role="status" aria-live="polite" inert={!connected && inGame}>
           <span className="toast-icon" aria-hidden="true">

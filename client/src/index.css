@@ -25,6 +25,7 @@ button { touch-action: manipulation; font-family: inherit; }
 .app.home-screen { gap: 0; padding: 0; }
 .app.home-screen:has(.player-home) { align-items: stretch; width: 100%; max-width: 100vw; overflow-x: clip; background: radial-gradient(120% 70% at 50% 25%, #5a3418 0%, #2b1608 55%, #120a04 100%); }
 .app.login-screen { gap: 0; padding: 0; overflow-x: hidden; }
+.app.lobby-screen > .pl-wrap { margin-block: auto; }
 @media (max-width: 600px) {
   .app.home-screen:has(.player-home) { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
   .app.in-game { justify-content: center; }
