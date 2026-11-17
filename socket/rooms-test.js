@@ -2,14 +2,91 @@ const assert = require('assert');
 const engine = require('../game/engine');
 const { calculateWager } = require('../game/wager');
 const {
-  autoAct, publicState, pickBotName, forfeitGame, rollDiceForCurrentPlayer,
+  registerHandlers, autoAct, publicState, pickBotName, forfeitGame, rollDiceForCurrentPlayer,
   takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE,
 } = require('./rooms');
+
+function makeLobbyTestSocket(id, io) {
+  const handlers = {};
+  const emitted = [];
+  const socket = {
+    id,
+    data: {
+      playerId: id,
+      masterId: 'test-master',
+      authExpiresAt: Math.floor(Date.now() / 1000) + 3600,
+    },
+    connected: true,
+    handshake: { auth: {} },
+    on: (event, handler) => { handlers[event] = handler; },
+    emit: (event, payload) => emitted.push({ event, payload }),
+    join: () => {},
+    leave: () => {},
+  };
+  registerHandlers(io, socket);
+  return { handlers, emitted, socket };
+}
+
+const lobbyEvents = [];
+const lobbyTestIo = {
+  to: (target) => ({
+    emit: (event, payload) => lobbyEvents.push({ target, event, payload }),
+  }),
+  sockets: { sockets: new Map() },
+};
+
+for (const mode of [2, 4]) {
+  const host = makeLobbyTestSocket(`host-${mode}`, lobbyTestIo);
+  const guests = [];
+  host.handlers.create_room({ mode, bet: 300, name: 'Host' });
+  const lobbyUpdate = lobbyEvents.filter(({ event }) => event === 'lobby_update').at(-1).payload;
+  assert.strictEqual(lobbyUpdate.mode, mode, `${mode}-player private tables should keep their selected mode`);
+  assert.strictEqual(lobbyUpdate.bet, 300, 'private tables should publish their per-player bet');
+  host.handlers.start_room();
+  assert.ok(host.emitted.some(({ event, payload }) =>
+    event === 'lobby_error' && payload === 'Wait for all players to join before starting.'
+  ), `${mode}-player private tables should wait for human players`);
+
+  for (let index = 1; index < mode; index++) {
+    const guest = makeLobbyTestSocket(`guest-${mode}-${index}`, lobbyTestIo);
+    guest.handlers.join_room({ code: lobbyUpdate.code, name: `Guest ${index}` });
+    guests.push(guest);
+  }
+  const fullLobby = lobbyEvents.filter(({ event }) => event === 'lobby_update').at(-1).payload;
+  assert.strictEqual(fullLobby.players.length, mode, `${mode}-player private tables should accept the correct number of players`);
+
+  const overflow = makeLobbyTestSocket(`overflow-${mode}`, lobbyTestIo);
+  overflow.handlers.join_room({ code: lobbyUpdate.code, name: 'Overflow' });
+  assert.ok(overflow.emitted.some(({ event, payload }) =>
+    event === 'lobby_error' && payload === 'Room is full.'
+  ));
+
+  [host, ...guests, overflow].forEach(({ handlers }) => handlers.disconnect());
+}
+
+const invalidBetHost = makeLobbyTestSocket('invalid-bet-host', lobbyTestIo);
+invalidBetHost.handlers.create_room({ mode: 2, bet: 299, name: 'Host' });
+assert.ok(invalidBetHost.emitted.some(({ event, payload }) =>
+  event === 'lobby_error' && payload === 'Choose a bet between 300 and 5,000 credits.'
+));
+invalidBetHost.handlers.disconnect();
+
+const invalidMode = makeLobbyTestSocket('invalid-mode', lobbyTestIo);
+invalidMode.handlers.create_room({ mode: 3, bet: 300, name: 'Player' });
+assert.ok(invalidMode.emitted.some(({ event, payload }) =>
+  event === 'lobby_error' && payload === 'Choose a 2-player or 4-player table.'
+));
+console.log('PASS: private tables support two and four players and reject invalid modes');
 
 assert.deepStrictEqual(calculateWager(300, 10), {
   feePerPlayer: 30,
   platformFee: 60,
   payout: 540,
+});
+assert.deepStrictEqual(calculateWager(300, 10, false, 4), {
+  feePerPlayer: 30,
+  platformFee: 120,
+  payout: 1080,
 });
 assert.deepStrictEqual(calculateWager(300, 10, true), {
   feePerPlayer: 30,
@@ -281,6 +358,40 @@ assert.strictEqual(forfeitRoom.seats[0].socketId, null);
 assert.strictEqual(leavingSocket.data.roomId, null);
 assert.ok(emitted.some(({ event, payload }) => event === 'game_over' && payload.winner === 'yellow'));
 console.log('PASS: quitting ends the game and awards the opponent a win');
+
+const fourPlayerForfeitRoom = {
+  id: 'four-player-forfeit-test',
+  game: engine.createGame(['red', 'green', 'yellow', 'blue']),
+  phase: 'move',
+  timer: null,
+  deadline: Date.now() + 1000,
+  seats: ['red', 'green', 'yellow', 'blue'].map((color) => ({
+    color,
+    name: `${color} player`,
+    baseName: `${color} player`,
+    clientId: null,
+    socketId: `${color}-socket`,
+    isBot: false,
+  })),
+};
+fourPlayerForfeitRoom.game.turn = 'yellow';
+const fourPlayerLeavingSocket = {
+  id: 'red-socket',
+  data: { roomId: fourPlayerForfeitRoom.id, color: 'red' },
+  leave: () => {},
+};
+assert.strictEqual(
+  forfeitGame(forfeitIo, fourPlayerForfeitRoom, fourPlayerForfeitRoom.seats[0], fourPlayerLeavingSocket),
+  true
+);
+assert.strictEqual(fourPlayerForfeitRoom.game.winner, null);
+assert.strictEqual(fourPlayerForfeitRoom.seats[0].isBot, true);
+assert.strictEqual(fourPlayerForfeitRoom.seats[0].name, 'red player (bot)');
+assert.strictEqual(fourPlayerLeavingSocket.data.roomId, null);
+assert.ok(emitted.some(({ target, event }) =>
+  target === 'green-socket' && event === 'game_update'
+), 'the remaining players should continue the four-player game');
+console.log('PASS: leaving a four-player wager replaces only that seat with a bot');
 
 const game = engine.createGame(['red', 'yellow'], { tokensToWin: 1 });
 game.captures.red = engine.CAPTURES_TO_UNLOCK_HOME;

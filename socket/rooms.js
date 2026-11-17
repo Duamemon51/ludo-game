@@ -5,6 +5,7 @@ const { WagerError, createWageredMatch, settleWageredMatch, refundWageredMatch }
 
 const MODE_COLORS = {
   2: ['red', 'yellow'],
+  4: ['red', 'green', 'yellow', 'blue'],
 };
 const TURN_MS = 20000;
 const QUEUE_WAIT_MS = { normal: 15000, tournament: 20000 };
@@ -57,6 +58,7 @@ function broadcastLobby(io, lobby) {
   io.to('lobby_' + lobby.code).emit('lobby_update', {
     code: lobby.code,
     mode: lobby.mode,
+    bet: lobby.bet,
     hostId: lobby.hostId,
     players: lobby.players.map((p) => ({ id: p.socket.id, name: p.name })),
   });
@@ -79,10 +81,24 @@ function leaveLobby(io, socket) {
 }
 
 function joinLobby(io, lobby, socket, name) {
-  lobby.players.push({ socket, name: cleanName(name) });
+  lobby.players.push({
+    socket,
+    name: cleanName(name),
+    playerId: socket.data.playerId,
+    masterId: socket.data.masterId,
+  });
   socket.data.lobbyCode = lobby.code;
   socket.join('lobby_' + lobby.code);
   broadcastLobby(io, lobby);
+}
+
+function hasActivePlayerSession(socket) {
+  return Boolean(
+    socket.data.playerId
+    && socket.data.masterId
+    && socket.data.authExpiresAt
+    && socket.data.authExpiresAt > Math.floor(Date.now() / 1000)
+  );
 }
 
 // ---------- Game helpers ----------
@@ -565,8 +581,11 @@ function finishGame(io, room) {
 }
 
 function forfeitGame(io, room, seat, socket) {
+  if (room.finishing || room.game.winner) return false;
+  if (room.seats.length > 2) return releaseSeatToBot(io, room, seat, socket);
+
   const opponent = room.seats.find((candidate) => candidate.color !== seat.color);
-  if (!opponent || room.finishing || room.game.winner) return false;
+  if (!opponent) return false;
 
   room.game.winner = opponent.color;
   seat.socketId = null;
@@ -658,9 +677,9 @@ function destroyRoom(io, room) {
 
 // ---------- Rooms and matchmaking ----------
 
-function createRoom(io, players, { tokensToWin = 4, wager = null } = {}) {
-  const mode = 2;
+function createRoom(io, players, { tokensToWin = 4, wager = null, mode = 2 } = {}) {
   const colors = MODE_COLORS[mode];
+  if (!colors) throw new RangeError('Room mode must be 2 or 4 players.');
   const id = 'room_' + ++roomCounter;
   const usedNames = new Set(players.map((player) => player.name.toLocaleLowerCase()));
   players.forEach((player) => {
@@ -822,6 +841,46 @@ async function startWageredRoom(io, players, tokensToWin, botOpponent) {
   }
 }
 
+async function startPrivateWageredRoom(io, lobby) {
+  const players = lobby.players.map((player) => ({
+    ...player,
+    bet: lobby.bet,
+    queueType: 'private',
+  }));
+  if (players.some((player) => !hasActivePlayerSession(player.socket))) {
+    throw new WagerError('A player must sign in again before the table can start.');
+  }
+  if (players.some((player) => !player.socket.connected)) {
+    throw new WagerError('A player disconnected before the table could start.');
+  }
+
+  const matchCode = `LUD-${randomUUID()}`;
+  const wager = await createWageredMatch(
+    players,
+    lobby.bet,
+    matchCode,
+    'private',
+    { playerCount: lobby.mode }
+  );
+  try {
+    createRoom(io, players, { mode: lobby.mode, wager });
+  } catch (error) {
+    try {
+      await refundWageredMatch(wager.id);
+    } catch (refundError) {
+      console.error(`Could not refund private-table wager ${matchCode}:`, refundError);
+      throw new WagerError('Table setup failed and the bet refund is pending. Please contact support.');
+    }
+    throw new WagerError('Table setup failed. Your bet has been refunded.');
+  }
+
+  lobbies.delete(lobby.code);
+  players.forEach((player) => {
+    player.socket.data.lobbyCode = null;
+    player.socket.leave('lobby_' + lobby.code);
+  });
+}
+
 function removeFromQueues(io, socket, requestId) {
   for (const queueType of Object.keys(queues)) {
     const queue = queues[queueType];
@@ -840,6 +899,10 @@ function replaceWithBot(io, socket) {
   const seat = room && room.seats.find((s) => s.socketId === socket.id);
   if (!room || !seat) return false;
 
+  return releaseSeatToBot(io, room, seat, socket);
+}
+
+function releaseSeatToBot(io, room, seat, socket) {
   seat.socketId = null;
   seat.isBot = true;
   seat.name = seat.baseName + ' (bot)';
@@ -999,13 +1062,25 @@ function registerHandlers(io, socket) {
 
   // ----- Friend rooms -----
 
-  socket.on('create_room', ({ name } = {}) => {
+  socket.on('create_room', ({ mode = 2, name, bet } = {}) => {
     if (socket.data.roomId) return;
+    if (!hasActivePlayerSession(socket)) {
+      return socket.emit('lobby_error', 'Sign in again as a Player to create a wagered table.');
+    }
+    const playerCount = Number(mode);
+    if (!MODE_COLORS[playerCount]) {
+      return socket.emit('lobby_error', 'Choose a 2-player or 4-player table.');
+    }
+    const betAmount = Number(bet);
+    if (!Number.isSafeInteger(betAmount) || betAmount < 300 || betAmount > 5000) {
+      return socket.emit('lobby_error', 'Choose a bet between 300 and 5,000 credits.');
+    }
     removeFromQueues(io, socket);
     leaveLobby(io, socket);
     const lobby = {
       code: makeCode(),
-      mode: 2,
+      mode: playerCount,
+      bet: betAmount,
       hostId: socket.id,
       players: [],
     };
@@ -1015,9 +1090,18 @@ function registerHandlers(io, socket) {
 
   socket.on('join_room', ({ code, name } = {}) => {
     if (socket.data.roomId) return;
+    if (!hasActivePlayerSession(socket)) {
+      return socket.emit('lobby_error', 'Sign in again as a Player to join a wagered table.');
+    }
     const lobby = lobbies.get(String(code || '').trim().toUpperCase());
     if (!lobby) return socket.emit('lobby_error', 'Room not found. Check the code.');
     if (lobby.players.some((p) => p.socket.id === socket.id)) return;
+    if (lobby.players.some((p) => String(p.playerId) === String(socket.data.playerId))) {
+      return socket.emit('lobby_error', 'This player has already joined the table.');
+    }
+    if (lobby.players.some((p) => String(p.masterId) !== String(socket.data.masterId))) {
+      return socket.emit('lobby_error', 'All players must belong to the same Master to play for credits.');
+    }
     if (lobby.players.length >= lobby.mode) return socket.emit('lobby_error', 'Room is full.');
     removeFromQueues(io, socket);
     leaveLobby(io, socket);
@@ -1040,15 +1124,23 @@ function registerHandlers(io, socket) {
     });
   });
 
-  socket.on('start_room', () => {
+  socket.on('start_room', async () => {
     const lobby = lobbies.get(socket.data.lobbyCode);
     if (!lobby || lobby.hostId !== socket.id) return; // only the host can start
-    lobbies.delete(lobby.code);
-    lobby.players.forEach((p) => {
-      p.socket.data.lobbyCode = null;
-      p.socket.leave('lobby_' + lobby.code);
-    });
-    createRoom(io, lobby.players); // empty seats become bots
+    if (lobby.players.length !== lobby.mode) {
+      return socket.emit('lobby_error', 'Wait for all players to join before starting.');
+    }
+    try {
+      await startPrivateWageredRoom(io, lobby);
+    } catch (error) {
+      const message = error instanceof WagerError
+        ? error.message
+        : 'Could not start the private table. Please try again.';
+      if (!(error instanceof WagerError)) {
+        console.error(`Could not start private table ${lobby.code}:`, error);
+      }
+      io.to('lobby_' + lobby.code).emit('lobby_error', message);
+    }
   });
 
   // ----- Chat -----
