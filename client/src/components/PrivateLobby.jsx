@@ -448,7 +448,7 @@ const CSS = `
     .pl-share-icon { width: 38px; height: 38px; }
     .pl-name { max-width: 100px; padding-inline: 8px; font-size: 12px; }
   }
-  @media (prefers-reduced-motion: reduce) {
+  @media (prefers-reduced-motion: reduce) and (hover: hover) and (pointer: fine) {
     .pl-wrap *, .pl-wrap *::after { animation: none !important; transition: none !important; }
   }
 `;
