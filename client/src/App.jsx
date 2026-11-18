@@ -484,6 +484,11 @@ export default function App() {
     setMyColor(null);
     setStatus('idle');
   };
+  useEffect(() => {
+    if (status !== 'over') return undefined;
+    const timer = setTimeout(reset, 3000);
+    return () => clearTimeout(timer);
+  }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
   const leaveGame = () => {
     if (!connected) return;
     leaveRequestRef.current = true;
@@ -742,18 +747,16 @@ export default function App() {
             </div>
           )}
           <div className={`card center result-card ${game.winner === myColor && !gameResult?.cancelled && !gameResult?.forfeited ? 'win' : 'loss'}`}>
-            {(game.winner !== myColor || gameResult?.cancelled || gameResult?.forfeited) && (
-              <button
-                className="result-close"
-                type="button"
-                aria-label="Close and return to home"
-                onClick={reset}
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="m7 7 10 10M17 7 7 17" />
-                </svg>
-              </button>
-            )}
+            <button
+              className="result-close"
+              type="button"
+              aria-label="Close and return to home"
+              onClick={reset}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m7 7 10 10M17 7 7 17" />
+              </svg>
+            </button>
             <div className="result-icon" aria-hidden="true">
               {gameResult?.cancelled || gameResult?.forfeited ? '↩' : game.winner === myColor ? '🏆' : '🎲'}
             </div>
@@ -771,9 +774,6 @@ export default function App() {
                   ? `Payout: ${gameResult.wager.payout.toLocaleString()} credits`
                   : `Lost: ${gameResult.wager.bet.toLocaleString()} credits`}
               </p>
-            )}
-            {game.winner === myColor && !gameResult?.cancelled && (
-              <button className="btn" onClick={reset}>Play again</button>
             )}
           </div>
         </div>

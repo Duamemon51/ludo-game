@@ -22,14 +22,20 @@ const ICON_DOWN = <><path d="M12 5v14" /><path d="m5 12 7 7 7-7" /></>;
 const ICON_UP = <><path d="M12 19V5" /><path d="m5 12 7-7 7 7" /></>;
 
 // Compact page header: round back icon, title, optional round icon action.
-function PanelHead({ title, onBack, action, className = '' }) {
+function PanelHead({ title, onBack, action, className = '', closeOnly = false }) {
   return (
     <div className={`ph-head ${className}`}>
-      <button type="button" className="ph-icon-btn" onClick={onBack} aria-label="Back">
-        <Icon><path d="m15 18-6-6 6-6" /></Icon>
-      </button>
+      {!closeOnly && (
+        <button type="button" className="ph-icon-btn" onClick={onBack} aria-label="Back">
+          <Icon><path d="m15 18-6-6 6-6" /></Icon>
+        </button>
+      )}
       <h2>{title}</h2>
-      {action ? (
+      {closeOnly ? (
+        <button type="button" className="ph-icon-btn" onClick={onBack} aria-label="Close">
+          <Icon><path d="M7 7l10 10M17 7L7 17" /></Icon>
+        </button>
+      ) : action ? (
         <button type="button" className="ph-icon-btn" onClick={action.onClick} aria-label={action.label} title={action.label}>
           <Icon>{action.icon}</Icon>
         </button>
@@ -908,6 +914,8 @@ export default function PlayerHome({
         /* compact headers, icon buttons, stat tiles and list rows */
         .ph-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
         .ph-head h2 { flex: 1; min-width: 0; margin: 0; font-size: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ph-close-only .ph-icon-btn { width: 32px; height: 32px; }
+        .ph-close-only .ph-icon-btn svg { width: 16px; height: 16px; }
         .ph-head-spacer { flex: none; width: 38px; }
         .ph-icon-btn { flex: none; display: grid; place-items: center; width: 38px; height: 38px; padding: 0; border: 1px solid #d5a928; border-radius: 50%; color: #55340b; background: linear-gradient(180deg, #fff8df, #f3dfa9); box-shadow: inset 0 1px 0 #fff, 0 3px 0 #c39729, 0 5px 9px #3b241225; }
         .ph-icon-btn:active { transform: translateY(2px); box-shadow: inset 0 1px 0 #fff, 0 1px 0 #c39729; }
@@ -1122,7 +1130,7 @@ export default function PlayerHome({
 
           {page === 'match' && (
             <section className="ph-panel">
-              <PanelHead title="Choose your bet" onBack={() => setPage('home')} />
+              <PanelHead className="ph-close-only" title="Choose your bet" onBack={() => setPage('home')} closeOnly />
               <p>Minimum bet is 300. The platform receives {feePercent}% of each player’s bet.</p>
               <div className="ph-bet-selector" role="group" aria-label="Bet amount">
                 <button
@@ -1174,7 +1182,7 @@ export default function PlayerHome({
 
           {SHOW_TOURNAMENT_UI && page === 'tournaments' && (
             <section className="ph-panel ph-tournament-panel">
-              <PanelHead title="Quick 1 vs 1" onBack={() => setPage('home')} />
+              <PanelHead className="ph-close-only" title="Quick 1 vs 1" onBack={() => setPage('home')} closeOnly />
               <p>Choose your entry amount to join a single 1 vs 1 match.</p>
               <div className="ph-grid">
                 <div className="ph-tournament-bet-content" key={TOURNAMENT.id}>

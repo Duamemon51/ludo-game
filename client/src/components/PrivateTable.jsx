@@ -99,11 +99,12 @@ export default function PrivateTable({
       <style>{CSS}</style>
       <section className="ph-panel ph-private-table">
         <div className="ph-head">
+          <h2>Private table</h2>
           <button
             type="button"
             className="ph-icon-btn"
             onClick={onBack}
-            aria-label="Back"
+            aria-label="Close"
           >
             <svg
               viewBox="0 0 24 24"
@@ -116,11 +117,9 @@ export default function PrivateTable({
               strokeLinejoin="round"
               aria-hidden="true"
             >
-              <path d="m15 18-6-6 6-6" />
+              <path d="M7 7l10 10M17 7L7 17" />
             </svg>
           </button>
-          <h2>Private table</h2>
-          <span className="ph-head-spacer" />
         </div>
 
         <p>
