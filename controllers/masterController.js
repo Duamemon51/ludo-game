@@ -3,6 +3,7 @@ const { randomBytes, randomUUID } = require('node:crypto');
 const { pool, transaction } = require('../db/pool');
 
 const MAX_AMOUNT = 999999999999.99;
+const MIN_WITHDRAWAL = 2000;
 const STATUS_LABELS = { ACTIVE: 'Active', INACTIVE: 'Inactive', BLOCKED: 'Blocked' };
 const createTemporaryPassword = () => randomBytes(24).toString('base64url');
 
@@ -132,9 +133,13 @@ async function getDashboard(req, res, next) {
       [req.master.id]
     );
     const [[matches]] = await pool.execute(
-      `SELECT COUNT(*) AS total FROM matches
-       WHERE master_id = ? AND started_at >= CURRENT_DATE()
-       AND started_at < CURRENT_DATE() + INTERVAL 1 DAY`,
+      `SELECT COUNT(DISTINCT m.id) AS total
+       FROM matches m
+       JOIN match_players mp ON mp.match_id = m.id
+       JOIN accounts p ON p.id = mp.player_id AND p.role = 'PLAYER'
+       WHERE p.master_id = ?
+       AND m.started_at >= CURRENT_DATE()
+       AND m.started_at < CURRENT_DATE() + INTERVAL 1 DAY`,
       [req.master.id]
     );
     const [[userWithdrawals]] = await pool.execute(
@@ -296,9 +301,9 @@ async function getUsersById(req, res, next) {
        JOIN match_players mp ON mp.match_id = m.id
        JOIN accounts player ON player.id = mp.player_id
        LEFT JOIN accounts winner ON winner.id = m.winner_id
-       WHERE own.player_id = ? AND m.master_id = ?
+       WHERE own.player_id = ?
        GROUP BY m.id ORDER BY m.started_at DESC`,
-      [user.id, req.master.id]
+      [user.id]
     );
     res.json({
       id: String(user.id),
@@ -447,6 +452,9 @@ async function postUsersByIdWallet(req, res, next) {
     const type = String(req.body?.type || '').toLowerCase();
     if (!['deposit', 'withdraw'].includes(type)) throw new HttpError(400, 'Wallet action must be deposit or withdraw.');
     const value = amount(req.body?.amount);
+    if (type === 'withdraw' && value < MIN_WITHDRAWAL) {
+      throw new HttpError(400, 'Minimum withdrawal amount is 2000 credits.');
+    }
     const note = text(req.body?.note, 'Transaction note', 500);
     const result = await transaction(async (connection) => {
       const [rows] = await connection.execute(
@@ -610,6 +618,9 @@ async function postWithdrawals(req, res, next) {
     const type = String(req.body?.type || 'withdrawal').toLowerCase();
     if (!['deposit', 'withdrawal'].includes(type)) throw new HttpError(400, 'Request type must be deposit or withdrawal.');
     const value = amount(req.body?.amount);
+    if (type === 'withdrawal' && value < MIN_WITHDRAWAL) {
+      throw new HttpError(400, 'Minimum withdrawal amount is 2000 credits.');
+    }
     const requestId = randomUUID();
     const result = await transaction(async (connection) => {
       const [walletRows] = await connection.execute(
@@ -691,7 +702,14 @@ async function getMatches(req, res, next) {
        LEFT JOIN match_players mp ON mp.match_id = m.id
        LEFT JOIN accounts player ON player.id = mp.player_id
        LEFT JOIN accounts winner ON winner.id = m.winner_id
-       WHERE m.master_id = ?
+       WHERE EXISTS (
+         SELECT 1
+         FROM match_players master_mp
+         JOIN accounts master_player ON master_player.id = master_mp.player_id
+         WHERE master_mp.match_id = m.id
+           AND master_player.master_id = ?
+           AND master_player.role = 'PLAYER'
+       )
        GROUP BY m.id ORDER BY m.started_at DESC LIMIT 500`,
       [req.master.id]
     );
