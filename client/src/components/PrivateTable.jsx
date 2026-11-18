@@ -124,7 +124,8 @@ export default function PrivateTable({
 
         <p>
           Create a private table for friends, or join one with its room code.
-          The game starts when all seats are filled.
+          4-player tables can start with 2 or more people; empty seats stay vacant.
+          Winnings depend on the number of players who join.
         </p>
 
         <div className="ph-bet-selector" role="group" aria-label="Private table bet amount">
@@ -179,7 +180,10 @@ export default function PrivateTable({
               <span className="hg-icon"><TableIcon playerCount={playerCount} /></span>
               <span className="hg-text">
                 <strong>{playerCount} Players</strong>
-                <small>Win {payoutFor(playerCount).toLocaleString()}</small>
+                <small>
+                  Win {playerCount === 4 ? 'up to ' : ''}
+                  {payoutFor(playerCount).toLocaleString()}
+                </small>
               </span>
             </button>
           ))}
