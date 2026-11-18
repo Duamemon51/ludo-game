@@ -11,13 +11,12 @@ class WagerError extends Error {
 
 const roundCredits = (amount) => Math.round((amount + Number.EPSILON) * 100) / 100;
 
-function calculateWager(bet, feePercent, botOpponent = false, playerCount = 2) {
+function calculateWager(bet, feePercent, _botOpponent = false, playerCount = 2) {
   const feePerPlayer = roundCredits((bet * feePercent) / 100);
-  const totalPlayers = botOpponent ? 2 : playerCount;
   return {
     feePerPlayer,
     platformFee: feePerPlayer,
-    payout: roundCredits((bet * totalPlayers) - feePerPlayer),
+    payout: roundCredits((bet * playerCount) - feePerPlayer),
   };
 }
 
@@ -26,7 +25,7 @@ async function createWageredMatch(
   bet,
   matchCode,
   queueType,
-  { botOpponent = false, playerCount = 2 } = {}
+  { botOpponent = false, playerCount = 2, botPlayers } = {}
 ) {
   if (!Number.isSafeInteger(bet) || bet <= 0 || bet > MAX_BET) {
     throw new WagerError(`Bet must be between the minimum bet and ${MAX_BET} credits.`);
@@ -34,10 +33,13 @@ async function createWageredMatch(
   const playerIds = players.map((player) => (
     player.playerId == null ? '' : String(player.playerId)
   ));
-  const expectedPlayers = botOpponent ? 1 : playerCount;
+  const botPlayerCount = botPlayers ?? (botOpponent ? 1 : 0);
+  const expectedPlayers = playerCount - botPlayerCount;
   if (
-    (!botOpponent && ![2, 4].includes(playerCount))
-    || !Number.isInteger(playerCount)
+    ![2, 3, 4].includes(playerCount)
+    || !Number.isInteger(botPlayerCount)
+    || botPlayerCount < 0
+    || botPlayerCount >= playerCount
     || players.length !== expectedPlayers
     || !playerIds.every(Boolean)
     || new Set(playerIds).size !== playerIds.length
@@ -110,7 +112,7 @@ async function createWageredMatch(
       `INSERT INTO matches
         (match_code, master_id, bet_per_player, platform_fee, payout, opponent_is_bot, status)
        VALUES (?, ?, ?, ?, ?, ?, 'IN_PROGRESS')`,
-      [matchCode, accounts[0].master_id, bet, platformFee, payout, botOpponent ? 1 : 0]
+      [matchCode, accounts[0].master_id, bet, platformFee, payout, botPlayerCount > 0 ? 1 : 0]
     );
     const matchId = String(matchResult.insertId);
 
@@ -163,12 +165,12 @@ async function settleWageredMatch(matchId, winnerId) {
       [matchId]
     );
     if (
-      (match.opponent_is_bot && players.length !== 1)
-      || (!match.opponent_is_bot && ![2, 4].includes(players.length))
+      (match.opponent_is_bot && (players.length < 1 || players.length > 3))
+      || (!match.opponent_is_bot && ![2, 3, 4].includes(players.length))
     ) {
       throw new WagerError('The wagered match player records are incomplete.');
     }
-    const feePerPlayer = Number(match.platform_fee) / players.length;
+    const feePerPlayer = Number(match.platform_fee);
 
     if (match.status === 'COMPLETED') {
       return {
@@ -245,8 +247,8 @@ async function refundWageredMatch(matchId) {
       [matchId]
     );
     if (
-      (match.opponent_is_bot && players.length !== 1)
-      || (!match.opponent_is_bot && ![2, 4].includes(players.length))
+      (match.opponent_is_bot && (players.length < 1 || players.length > 3))
+      || (!match.opponent_is_bot && ![2, 3, 4].includes(players.length))
     ) {
       throw new WagerError('The wagered match player records are incomplete.');
     }
