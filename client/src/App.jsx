@@ -789,7 +789,7 @@ export default function App() {
               </svg>
             </div>
             <h2>Quit game?</h2>
-            <p className="hint">Agar aap quit karte hain to game khatam hoga aur opponent winner hoga.</p>
+            <p className="hint">If you quit, the game will end and your opponent will win.</p>
             <div className="quit-actions">
               <button className="btn quit-confirm" onClick={leaveGame} disabled={!connected || leaving}>
                 {leaving ? 'Leaving...' : 'Quit'}
