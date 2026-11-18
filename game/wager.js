@@ -13,13 +13,11 @@ const roundCredits = (amount) => Math.round((amount + Number.EPSILON) * 100) / 1
 
 function calculateWager(bet, feePercent, botOpponent = false, playerCount = 2) {
   const feePerPlayer = roundCredits((bet * feePercent) / 100);
-  const chargedPlayers = botOpponent ? 1 : playerCount;
   const totalPlayers = botOpponent ? 2 : playerCount;
-  const totalFee = roundCredits(feePerPlayer * totalPlayers);
   return {
     feePerPlayer,
-    platformFee: roundCredits(feePerPlayer * chargedPlayers),
-    payout: roundCredits((bet * totalPlayers) - totalFee),
+    platformFee: feePerPlayer,
+    payout: roundCredits((bet * totalPlayers) - feePerPlayer),
   };
 }
 

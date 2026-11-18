@@ -80,18 +80,18 @@ console.log('PASS: private tables support two and four players and reject invali
 
 assert.deepStrictEqual(calculateWager(300, 10), {
   feePerPlayer: 30,
-  platformFee: 60,
-  payout: 540,
+  platformFee: 30,
+  payout: 570,
 });
 assert.deepStrictEqual(calculateWager(300, 10, false, 4), {
   feePerPlayer: 30,
-  platformFee: 120,
-  payout: 1080,
+  platformFee: 30,
+  payout: 1170,
 });
 assert.deepStrictEqual(calculateWager(300, 10, true), {
   feePerPlayer: 30,
   platformFee: 30,
-  payout: 540,
+  payout: 570,
 });
 assert.deepStrictEqual(calculateWager(300, 0), {
   feePerPlayer: 0,
