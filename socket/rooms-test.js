@@ -4,6 +4,7 @@ const { calculateWager } = require('../game/wager');
 const {
   registerHandlers, autoAct, publicState, pickBotName, forfeitGame, rollDiceForCurrentPlayer,
   takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE, pickBotLevel,
+  canStartPrivateRoom, isPrivateRoomStarted, createRoom, advanceTurn,
 } = require('./rooms');
 
 function makeLobbyTestSocket(id, io) {
@@ -44,8 +45,8 @@ for (const mode of [2, 4]) {
   assert.strictEqual(lobbyUpdate.bet, 300, 'private tables should publish their per-player bet');
   host.handlers.start_room();
   assert.ok(host.emitted.some(({ event, payload }) =>
-    event === 'lobby_error' && payload === 'Wait for all players to join before starting.'
-  ), `${mode}-player private tables should wait for human players`);
+    event === 'lobby_error' && payload === 'At least two players are required to start a private table.'
+  ), `${mode}-player private tables should require at least two players`);
 
   for (let index = 1; index < mode; index++) {
     const guest = makeLobbyTestSocket(`guest-${mode}-${index}`, lobbyTestIo);
@@ -78,6 +79,45 @@ assert.ok(invalidMode.emitted.some(({ event, payload }) =>
 ));
 console.log('PASS: private tables support two and four players and reject invalid modes');
 
+for (const playerCount of [2, 3]) {
+  const players = Array.from({ length: playerCount }, (_, index) => {
+    const testSocket = makeLobbyTestSocket(`partial-${playerCount}-${index}`, lobbyTestIo);
+    return {
+      name: `Player ${index + 1}`,
+      playerId: testSocket.socket.data.playerId,
+      socket: testSocket.socket,
+    };
+  });
+  const room = createRoom(lobbyTestIo, players, { mode: 4 });
+  assert.strictEqual(room.seats.length, playerCount);
+  assert.strictEqual(room.seats.some((seat) => seat.isBot), false);
+  assert.deepStrictEqual(room.game.colors, room.seats.map((seat) => seat.color));
+  clearTimeout(room.timer);
+}
+const fallbackSocket = makeLobbyTestSocket('fallback-bot-player', lobbyTestIo);
+const fallbackRoom = createRoom(lobbyTestIo, [{
+  name: 'Queue player',
+  playerId: fallbackSocket.socket.data.playerId,
+  socket: fallbackSocket.socket,
+}], { botOpponent: true });
+assert.deepStrictEqual(fallbackRoom.seats.map((seat) => seat.isBot), [false, true]);
+clearTimeout(fallbackRoom.timer);
+
+assert.strictEqual(canStartPrivateRoom(2, 1), false, '2-player tables require both human players');
+assert.strictEqual(canStartPrivateRoom(2, 2), true, '2-player tables start when full');
+assert.strictEqual(canStartPrivateRoom(4, 1), false, '4-player tables require at least two human players');
+for (const playerCount of [2, 3, 4]) {
+  assert.strictEqual(
+    canStartPrivateRoom(4, playerCount),
+    true,
+    `4-player tables should start with ${playerCount} human players`
+  );
+}
+assert.strictEqual(isPrivateRoomStarted({ starting: true }, null), true);
+assert.strictEqual(isPrivateRoomStarted(null, 1000, 2000), true);
+assert.strictEqual(isPrivateRoomStarted(null, 1000, 1000 + 24 * 60 * 60 * 1000), false);
+assert.strictEqual(isPrivateRoomStarted({ starting: false }, null), false);
+
 assert.deepStrictEqual(calculateWager(300, 10), {
   feePerPlayer: 30,
   platformFee: 30,
@@ -92,6 +132,16 @@ assert.deepStrictEqual(calculateWager(300, 10, true), {
   feePerPlayer: 30,
   platformFee: 30,
   payout: 570,
+});
+assert.deepStrictEqual(calculateWager(300, 10, true, 4), {
+  feePerPlayer: 30,
+  platformFee: 30,
+  payout: 1170,
+});
+assert.deepStrictEqual(calculateWager(300, 10, false, 3), {
+  feePerPlayer: 30,
+  platformFee: 30,
+  payout: 870,
 });
 assert.deepStrictEqual(calculateWager(300, 0), {
   feePerPlayer: 0,
@@ -283,10 +333,10 @@ assert.deepStrictEqual(playerView.rolledDice, [6, 2]);
 assert.deepStrictEqual(playerView.rolledDiceIds, [0, 1]);
 assert.deepStrictEqual(playerView.usedDiceIds, [0]);
 assert.deepStrictEqual(playerView.seats[0], {
-  color: 'red', name: 'Player', isBot: true, isTakeover: true,
+  color: 'red', name: 'Player', isBot: true, isTakeover: true, isLeft: false,
 });
 assert.deepStrictEqual(opponentView.seats[0], {
-  color: 'red', name: 'Player', isBot: false, isTakeover: false,
+  color: 'red', name: 'Player', isBot: false, isTakeover: false, isLeft: false,
 });
 const botOpponentRoom = {
   ...takeoverRoom,
@@ -296,7 +346,7 @@ const botOpponentRoom = {
   ],
 };
 assert.deepStrictEqual(publicState(botOpponentRoom, 'player-socket').seats[1], {
-  color: 'yellow', name: 'Ahmed', isBot: false, isTakeover: false,
+  color: 'yellow', name: 'Ahmed', isBot: false, isTakeover: false, isLeft: false,
 });
 console.log('PASS: takeover status is visible only to the affected player');
 
@@ -371,12 +421,14 @@ assert.strictEqual(forfeitGame(forfeitIo, forfeitRoom, forfeitRoom.seats[0], lea
 assert.strictEqual(forfeitRoom.game.winner, 'yellow');
 assert.strictEqual(forfeitRoom.phase, 'over');
 assert.strictEqual(forfeitRoom.seats[0].socketId, null);
+assert.strictEqual(forfeitRoom.seats[0].isLeft, true);
 assert.strictEqual(leavingSocket.data.roomId, null);
 assert.ok(emitted.some(({ event, payload }) => event === 'game_over' && payload.winner === 'yellow'));
 console.log('PASS: quitting ends the game and awards the opponent a win');
 
 const fourPlayerForfeitRoom = {
   id: 'four-player-forfeit-test',
+  mode: 4,
   game: engine.createGame(['red', 'green', 'yellow', 'blue']),
   phase: 'move',
   timer: null,
@@ -401,13 +453,56 @@ assert.strictEqual(
   true
 );
 assert.strictEqual(fourPlayerForfeitRoom.game.winner, null);
-assert.strictEqual(fourPlayerForfeitRoom.seats[0].isBot, true);
-assert.strictEqual(fourPlayerForfeitRoom.seats[0].name, 'red player (bot)');
+assert.strictEqual(fourPlayerForfeitRoom.seats[0].isBot, false);
+assert.strictEqual(fourPlayerForfeitRoom.seats[0].isLeft, true);
 assert.strictEqual(fourPlayerLeavingSocket.data.roomId, null);
+assert.strictEqual(
+  publicState(fourPlayerForfeitRoom, 'green-socket').seats[0].isLeft,
+  true,
+  'other players should see a left status on the departed player profile'
+);
 assert.ok(emitted.some(({ target, event }) =>
   target === 'green-socket' && event === 'game_update'
 ), 'the remaining players should continue the four-player game');
-console.log('PASS: leaving a four-player wager replaces only that seat with a bot');
+clearTimeout(fourPlayerForfeitRoom.timer);
+console.log('PASS: leaving a four-player game marks the seat left and continues without a bot');
+
+const lastPlayerFourModeRoom = {
+  id: 'last-player-four-mode-test',
+  mode: 4,
+  game: engine.createGame(['red', 'green']),
+  phase: 'roll',
+  timer: null,
+  seats: [
+    { color: 'red', name: 'Leaving player', socketId: 'last-leaving-socket', isBot: false },
+    { color: 'green', name: 'Remaining player', socketId: 'last-player-socket', isBot: false },
+  ],
+};
+const lastLeavingSocket = {
+  id: 'last-leaving-socket',
+  data: { roomId: lastPlayerFourModeRoom.id, color: 'red' },
+  leave: () => {},
+};
+assert.strictEqual(
+  forfeitGame(forfeitIo, lastPlayerFourModeRoom, lastPlayerFourModeRoom.seats[0], lastLeavingSocket),
+  true
+);
+assert.strictEqual(lastPlayerFourModeRoom.seats[0].isLeft, true);
+assert.strictEqual(lastPlayerFourModeRoom.seats[0].isBot, false);
+assert.strictEqual(lastPlayerFourModeRoom.game.winner, 'green');
+
+const skippedLeftSeatRoom = {
+  game: engine.createGame(['red', 'green', 'yellow', 'blue']),
+  seats: [
+    { color: 'red', isLeft: false },
+    { color: 'green', isLeft: true },
+    { color: 'yellow', isLeft: false },
+    { color: 'blue', isLeft: false },
+  ],
+};
+skippedLeftSeatRoom.game.turn = 'red';
+advanceTurn(skippedLeftSeatRoom);
+assert.strictEqual(skippedLeftSeatRoom.game.turn, 'yellow');
 
 const game = engine.createGame(['red', 'yellow'], { tokensToWin: 1 });
 game.captures.red = engine.CAPTURES_TO_UNLOCK_HOME;

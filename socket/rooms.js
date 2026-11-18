@@ -58,19 +58,39 @@ function pickBotLevel(fallbackCount, randomValue = Math.random()) {
   return BOT_LEVELS[Math.floor(randomValue * BOT_LEVELS.length)];
 }
 
+function canStartPrivateRoom(mode, playerCount) {
+  return mode === 2
+    ? playerCount === 2
+    : mode === 4 && playerCount >= 2 && playerCount <= 4;
+}
+
 // ---------- Friend rooms (private lobbies) ----------
 
 const lobbies = new Map();
+const startedLobbyCodes = new Map();
+const STARTED_LOBBY_CODE_TTL = 24 * 60 * 60 * 1000;
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no confusing 0/O or 1/I
 const cleanName = (n) => String(n || 'Player').trim().slice(0, 15) || 'Player';
 
+function isPrivateRoomStarted(lobby, startedAt, now = Date.now()) {
+  return Boolean(
+    (lobby && (lobby.starting || lobby.started))
+    || (startedAt != null && now - startedAt < STARTED_LOBBY_CODE_TTL)
+  );
+}
+
 function makeCode() {
+  const now = Date.now();
+  for (const [code, startedAt] of startedLobbyCodes) {
+    if (now - startedAt >= STARTED_LOBBY_CODE_TTL) startedLobbyCodes.delete(code);
+  }
+
   let code;
   do {
     code = Array.from({ length: 5 }, () =>
       CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]
     ).join('');
-  } while (lobbies.has(code));
+  } while (lobbies.has(code) || startedLobbyCodes.has(code));
   return code;
 }
 
@@ -272,6 +292,7 @@ function publicState(room, viewerSocketId) {
         name: s.isBot ? s.baseName : s.name,
         isBot: isOwnTakeover,
         isTakeover: isOwnTakeover,
+        isLeft: Boolean(s.isLeft),
       };
     }),
     tokens: room.game.tokens,
@@ -344,6 +365,17 @@ function startTurn(io, room) {
   broadcast(io, room);
 }
 
+function advanceTurn(room, extraTurn = false) {
+  engine.nextTurn(room.game, extraTurn);
+  if (extraTurn && !room.game.winner) return;
+
+  for (let attempts = 0; attempts < room.game.colors.length; attempts += 1) {
+    const seat = seatOf(room, room.game.turn);
+    if (seat && !seat.isLeft) return;
+    engine.nextTurn(room.game, false);
+  }
+}
+
 function autoAct(io, room) {
   if (room.phase === 'roll') {
     doRoll(io, room);
@@ -382,7 +414,7 @@ function forfeitTurnAfterThreeSixes(io, room, color) {
   });
   broadcast(io, room);
   room.timer = setTimeout(() => {
-    engine.nextTurn(room.game, false);
+    advanceTurn(room);
     startTurn(io, room);
   }, SKIP_MS);
 }
@@ -466,7 +498,7 @@ function showRollMoves(io, room) {
     room.deadline = null;
     broadcast(io, room);
     room.timer = setTimeout(() => {
-      engine.nextTurn(room.game, room.bonusTurn);
+      advanceTurn(room, room.bonusTurn);
       startTurn(io, room);
     }, SKIP_MS);
     return;
@@ -561,7 +593,7 @@ function doMove(io, room, tokenIdx, diceId) {
       return;
     }
 
-    engine.nextTurn(room.game, room.bonusTurn);
+    advanceTurn(room, room.bonusTurn);
     startTurn(io, room);
   }, moveAnimationDuration(from, to, room.game.captures[color]));
 }
@@ -620,7 +652,32 @@ function finishGame(io, room) {
 
 function forfeitGame(io, room, seat, socket) {
   if (room.finishing || room.game.winner) return false;
-  if (room.seats.length > 2) return releaseSeatToBot(io, room, seat, socket);
+  if (room.mode > 2) {
+    seat.socketId = null;
+    seat.isBot = false;
+    seat.isLeft = true;
+    if (seat.clientId && sessions.get(seat.clientId) === room.id) sessions.delete(seat.clientId);
+    seat.clientId = null;
+    seat.matchmakingId = null;
+    socket.leave(room.id);
+    socket.data.roomId = null;
+    socket.data.color = null;
+
+    const remainingSeats = room.seats.filter((candidate) => !candidate.isLeft);
+    if (remainingSeats.length === 1) {
+      room.game.winner = remainingSeats[0].color;
+      finishGame(io, room);
+      return true;
+    }
+
+    if (room.game.turn === seat.color) {
+      advanceTurn(room);
+      startTurn(io, room);
+    } else {
+      broadcast(io, room);
+    }
+    return true;
+  }
 
   const opponent = room.seats.find((candidate) => candidate.color !== seat.color);
   if (!opponent) return false;
@@ -628,6 +685,7 @@ function forfeitGame(io, room, seat, socket) {
   room.game.winner = opponent.color;
   seat.socketId = null;
   seat.isBot = false;
+  seat.isLeft = true;
   if (seat.clientId && sessions.get(seat.clientId) === room.id) sessions.delete(seat.clientId);
   seat.clientId = null;
   seat.matchmakingId = null;
@@ -727,19 +785,17 @@ function createRoom(io, players, {
     botNamesByClientId.get(clientId)?.forEach((name) => usedNames.add(name.toLowerCase()));
   });
 
-  const seats = colors.map((color, i) => {
-    const p = players[i];
-    if (p) {
-      return {
-        color, name: p.name, baseName: p.name,
-        clientId: p.socket.data.clientId || null,
-        playerId: p.playerId || null,
-        masterId: p.masterId || null,
-        matchmakingId: p.matchmakingId || null,
-        socketId: p.socket.id, isBot: false, missed: 0, level: 'medium',
-      };
-    }
-
+  const seats = players.map((p, i) => ({
+    color: colors[i], name: p.name, baseName: p.name,
+    clientId: p.socket.data.clientId || null,
+    playerId: p.playerId || null,
+    masterId: p.masterId || null,
+    matchmakingId: p.matchmakingId || null,
+    socketId: p.socket.id, isBot: false, missed: 0, level: 'medium',
+  }));
+  if (botOpponent) {
+    const color = colors[players.length];
+    if (!color) throw new RangeError('A bot opponent needs an available seat.');
     const level = botLevel;
     const name = pickBotName(usedNames, level);
     players.forEach((player) => {
@@ -748,17 +804,17 @@ function createRoom(io, players, {
       if (!botNamesByClientId.has(clientId)) botNamesByClientId.set(clientId, new Set());
       botNamesByClientId.get(clientId).add(name.toLowerCase());
     });
-    return {
+    seats.push({
       color, name, baseName: name,
       clientId: null,
       socketId: null, isBot: true, missed: 0, level,
-    };
-  });
+    });
+  }
 
   const room = {
     id, mode, seats,
     match: wager,
-    game: engine.createGame(colors, { tokensToWin }),
+    game: engine.createGame(seats.map((seat) => seat.color), { tokensToWin }),
     phase: 'roll', dice: null, diceOptions: [], pendingDiceOptions: [], captureDiceOptions: [], dieRollId: 0,
     rolledDice: [], rolledDiceIds: [], usedDiceIds: [], rollId: 0, validMoves: [], lastMove: null,
     bonusTurn: false, doubleRoll: false, captureBonusSixes: 0,
@@ -793,6 +849,7 @@ function createRoom(io, players, {
   }
 
   startTurn(io, room);
+  return room;
 }
 
 function checkQueue(io, queueType) {
@@ -911,7 +968,7 @@ async function startPrivateWageredRoom(io, lobby) {
     lobby.bet,
     matchCode,
     'private',
-    { playerCount: lobby.mode }
+    { playerCount: players.length }
   );
   try {
     createRoom(io, players, { mode: lobby.mode, wager });
@@ -925,6 +982,8 @@ async function startPrivateWageredRoom(io, lobby) {
     throw new WagerError('Table setup failed. Your bet has been refunded.');
   }
 
+  lobby.started = true;
+  startedLobbyCodes.set(lobby.code, Date.now());
   lobbies.delete(lobby.code);
   players.forEach((player) => {
     player.socket.data.lobbyCode = null;
@@ -1144,7 +1203,13 @@ function registerHandlers(io, socket) {
     if (!hasActivePlayerSession(socket)) {
       return socket.emit('lobby_error', 'Sign in again as a Player to join a wagered table.');
     }
-    const lobby = lobbies.get(String(code || '').trim().toUpperCase());
+    const roomCode = String(code || '').trim().toUpperCase();
+    const lobby = lobbies.get(roomCode);
+    const startedAt = startedLobbyCodes.get(roomCode);
+    if (isPrivateRoomStarted(lobby, startedAt)) {
+      return socket.emit('lobby_error', 'This game has already started.');
+    }
+    if (startedAt != null) startedLobbyCodes.delete(roomCode);
     if (!lobby) return socket.emit('lobby_error', 'Room not found. Check the code.');
     if (lobby.players.some((p) => p.socket.id === socket.id)) return;
     if (lobby.players.some((p) => String(p.playerId) === String(socket.data.playerId))) {
@@ -1175,12 +1240,15 @@ function registerHandlers(io, socket) {
   socket.on('start_room', async () => {
     const lobby = lobbies.get(socket.data.lobbyCode);
     if (!lobby || lobby.hostId !== socket.id) return; // only the host can start
-    if (lobby.players.length !== lobby.mode) {
-      return socket.emit('lobby_error', 'Wait for all players to join before starting.');
+    if (lobby.starting) return;
+    if (!canStartPrivateRoom(lobby.mode, lobby.players.length)) {
+      return socket.emit('lobby_error', 'At least two players are required to start a private table.');
     }
+    lobby.starting = true;
     try {
       await startPrivateWageredRoom(io, lobby);
     } catch (error) {
+      lobby.starting = false;
       const message = error instanceof WagerError
         ? error.message
         : 'Could not start the private table. Please try again.';
@@ -1293,5 +1361,5 @@ function registerHandlers(io, socket) {
 module.exports = {
   registerHandlers, autoAct, publicState, pickBotName, forfeitGame,
   rollDiceForCurrentPlayer, takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE,
-  pickBotLevel,
+  pickBotLevel, canStartPrivateRoom, isPrivateRoomStarted, createRoom, advanceTurn,
 };
