@@ -371,6 +371,10 @@ export default function PlayerHome({
 
   const submitWalletRequest = async (event) => {
     event.preventDefault();
+    if (walletRequestType === 'withdrawal' && Number(withdrawAmount) < 2000) {
+      setMessage('Minimum withdrawal amount is 2000 credits.');
+      return;
+    }
     setRequestingWalletRequest(true);
     setMessage('');
     try {
@@ -1255,7 +1259,7 @@ export default function PlayerHome({
               </div>
               <div className="ph-actions2">
                 <button type="button" className="ph-primary" disabled={loading || !active} onClick={() => openWalletRequest('deposit')}><Icon>{ICON_DOWN}</Icon>Deposit</button>
-                <button type="button" className="ph-primary" disabled={loading || !active || availableBalance <= 0} onClick={() => openWalletRequest('withdrawal')}><Icon>{ICON_UP}</Icon>Withdraw</button>
+                <button type="button" className="ph-primary" disabled={loading || !active || availableBalance < 2000} onClick={() => openWalletRequest('withdrawal')}><Icon>{ICON_UP}</Icon>Withdraw</button>
               </div>
               <p className="ph-hint">Deposits are approved by your Master. Pending withdrawals are held from your available balance.</p>
               {!active && <div className="ph-lock">Inactive accounts cannot request a withdrawal.</div>}
@@ -1469,10 +1473,10 @@ export default function PlayerHome({
           <form className="ph-modal" onSubmit={submitWalletRequest}>
             <h2>Request {walletRequestType}</h2>
             <p>{walletRequestType === 'withdrawal'
-              ? `Available balance: ${availableBalance.toLocaleString()}`
+              ? `Minimum withdrawal: 2,000 credits · Available balance: ${availableBalance.toLocaleString()}`
               : 'Your Master will review this request and add funds to your wallet if approved.'}</p>
             <label htmlFor="wallet-request-amount">Amount</label>
-            <input id="wallet-request-amount" type="number" min="0.01" step="0.01" max={walletRequestType === 'withdrawal' ? availableBalance : undefined} required value={withdrawAmount} onChange={(event) => setWithdrawAmount(event.target.value)} />
+            <input id="wallet-request-amount" type="number" min={walletRequestType === 'withdrawal' ? '2000' : '0.01'} step="0.01" max={walletRequestType === 'withdrawal' ? availableBalance : undefined} required value={withdrawAmount} onChange={(event) => setWithdrawAmount(event.target.value)} />
             <div className="ph-modal-actions">
               <button className="ph-primary" type="submit" disabled={requestingWalletRequest}>{requestingWalletRequest ? 'Submitting…' : 'Submit request'}</button>
               <button type="button" className="ph-back" onClick={() => setWalletRequestOpen(false)}>Cancel</button>

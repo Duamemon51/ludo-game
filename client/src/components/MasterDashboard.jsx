@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { masterRequest } from '../masterApi';
-import DashboardHeader from './DashboardHeader';
-import DashboardSidebar from './DashboardSidebar';
-import MasterRowActions from './MasterRowActions';
+import './MasterDashboard.css';
+import MasterDashboardHeader from './MasterDashboardHeader';
+import MasterDashboardSidebar from './MasterDashboardSidebar';
+import MasterDashboardPage from '../pages/master/MasterDashboardPage';
+import MasterUsersPage from '../pages/master/MasterUsersPage';
+import MasterRequestsPage from '../pages/master/MasterRequestsPage';
+import MasterWalletPage from '../pages/master/MasterWalletPage';
+import MasterMatchesPage from '../pages/master/MasterMatchesPage';
 
 const pages = [
   ['Dashboard', 'dashboard'],
@@ -148,7 +153,7 @@ function MasterDashboard({ token, onBack }) {
   const pendingUserRequests = userWithdrawals.filter((request) => request.status === 'Pending');
   const availableUserBalance = (user) => Math.max(0, user.wallet - (user.heldAmount || 0));
   const recentMatches = matches.slice(0, 5);
-  const sendWithdrawalRequest = master?.status === 'Active' && availableMasterBalance > 0;
+  const sendWithdrawalRequest = master?.status === 'Active' && availableMasterBalance >= 2000;
   const matchCountToday = stats?.matchesToday || 0;
 
   const openDialog = (action, user = null, request = null, decision = null) => {
@@ -174,6 +179,13 @@ function MasterDashboard({ token, onBack }) {
   const submitDialog = async (event) => {
     event.preventDefault();
     if (!dialog || saving) return;
+    if (
+      (dialog.action === 'withdraw-request' || dialog.action === 'user-withdraw')
+      && Number(amount) < 2000
+    ) {
+      setFormError('Minimum withdrawal amount is 2000 credits.');
+      return;
+    }
     setFormError('');
     setSaving(true);
     try {
@@ -323,8 +335,7 @@ function MasterDashboard({ token, onBack }) {
         @media(max-width:1100px){.md-stats-five{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:900px){.md-content{padding:25px 20px 34px}.md-topbar{padding-right:20px;padding-left:20px}.md-stats-five{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:680px){.md-content{width:100%;padding:20px 12px 28px}.md-topbar{min-height:54px;padding:0 13px}.md-heading{align-items:flex-start;flex-wrap:wrap;gap:12px}.md-heading>.md-actions{width:100%;flex-wrap:wrap}.md-heading>.md-primary{max-width:100%}.md-stats,.md-stats-five{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.md-stat{min-width:0;padding:12px}.md-stat strong{font-size:16px;overflow-wrap:anywhere}.md-card-head{min-height:52px;padding:10px 12px;align-items:flex-start;flex-direction:column;justify-content:center;gap:4px}.md-actions{flex-wrap:wrap}.md-dialog-backdrop{align-items:end;padding:10px 10px max(10px,env(safe-area-inset-bottom))}.md-dialog{width:100%;max-height:min(88dvh,780px);padding:20px 16px;border-radius:18px}.md-dialog-actions{position:sticky;bottom:-20px;padding:12px 0 max(2px,env(safe-area-inset-bottom));background:#fff}.md-fields input,.md-fields select,.md-fields textarea{font-size:16px}}@media(max-width:420px){.md-content{padding-right:9px;padding-left:9px}.md-stats,.md-stats-five{grid-template-columns:1fr}.md-table th,.md-table td{padding:10px 9px}.md-balance{gap:14px;padding:13px}.md-dialog-actions{flex-direction:column-reverse}.md-dialog-actions button{width:100%}}
       `}</style>
 
-      <DashboardSidebar
-        variant="master"
+      <MasterDashboardSidebar
         open={sidebarOpen}
         onClose={closeSidebar}
         brandSubtitle="MASTER PANEL"
@@ -347,8 +358,7 @@ function MasterDashboard({ token, onBack }) {
       />
 
       <section className="md-main">
-        <DashboardHeader
-          variant="master"
+        <MasterDashboardHeader
           breadcrumb={<>Master panel <span aria-hidden="true">/</span> <strong>{activePage}</strong></>}
           avatarText={initials(master?.name)}
           avatarLabel="Master account"
@@ -363,85 +373,57 @@ function MasterDashboard({ token, onBack }) {
           {loading && <section className="md-card"><div className="md-card-head"><h2>Loading Master data</h2></div><div className="md-balance">Connecting to your account…</div></section>}
           {!loading && master && (
             <>
-              {activePage === 'Dashboard' && <>
-                <div className="md-heading"><div><p className="md-eyebrow">MASTER OVERVIEW</p><h1>Dashboard</h1><p className="md-subtitle">Live wallet, users and match activity from your account.</p></div></div>
-                <div className="md-stats md-stats-five">
-                  <div className="md-stat"><span>My wallet balance</span><strong>{formatAmount(stats?.wallet)}</strong></div>
-                  <div className="md-stat"><span>Total users</span><strong>{stats?.totalUsers || 0}</strong></div>
-                  <div className="md-stat"><span>Active users</span><strong>{stats?.activeUsers || 0}</strong></div>
-                  <div className="md-stat"><span>Matches today</span><strong>{matchCountToday}</strong></div>
-                  <div className="md-stat"><span>Pending user withdrawals</span><strong>{stats?.pendingUserWithdrawals || 0}</strong><small>{formatAmount(stats?.pendingUserWithdrawalAmount)}</small></div>
-                </div>
-                <section className="md-card"><div className="md-card-head"><h2>Recent matches</h2><button type="button" className="md-action primary" onClick={() => setActivePage('Matches')}>View all matches</button></div><div className="md-table-wrap"><table className="md-table"><thead><tr><th>Match ID</th><th>Players</th><th>Bet</th><th>Fee</th><th>Status</th><th>Winner</th><th>Time</th></tr></thead><tbody>
-                  {recentMatches.map((match) => <tr key={match.id}><td><strong>{match.id}</strong></td><td>{match.players}</td><td>{formatAmount(match.bet)}</td><td>{formatAmount(match.fee)}</td><td>{match.status}</td><td>{match.winner || '—'}</td><td>{match.date} · {match.time}</td></tr>)}
-                  {!recentMatches.length && <tr><td className="md-empty" colSpan="7">No matches recorded yet.</td></tr>}
-                </tbody></table></div></section>
-              </>}
+              {activePage === 'Dashboard' && (
+                <MasterDashboardPage
+                  stats={stats}
+                  matches={matches}
+                  matchCountToday={matchCountToday}
+                  formatAmount={formatAmount}
+                  onViewMatches={() => setActivePage('Matches')}
+                />
+              )}
 
-              {activePage === 'Users' && !selectedUser && <>
-                <div className="md-heading"><div><p className="md-eyebrow">YOUR ACCOUNTS</p><h1>Users</h1><p className="md-subtitle">Only users managed by your Master account are shown here.</p></div><button type="button" className="md-primary" disabled={master.status !== 'Active'} onClick={() => openDialog('create-user')}>+ Create user</button></div>
-                <section className="md-card"><div className="md-card-head"><h2>Managed users</h2><span>{users.length} accounts · live data</span></div><div className="md-table-wrap"><table className="md-table"><thead><tr><th>User</th><th>Login ID</th><th>Status</th><th>Wallet</th><th>Last played</th><th>Created</th><th>Actions</th></tr></thead><tbody>
-                  {users.map((user) => <tr key={user.id}>
-                    <td><div className="md-user"><span className="md-user-avatar">{initials(user.name)}</span><span className="md-user-copy"><strong>{user.name}</strong><span>{user.phone || 'No phone'}</span></span></div></td>
-                    <td>{user.loginId}</td><td><span className={`md-status ${user.status.toLowerCase()}`}>{user.status}</span></td><td><span className="md-wallet">{formatAmount(user.wallet)}</span></td><td>{user.lastPlayed}</td><td>{user.createdAt}</td>
-                    <td><MasterRowActions
-                      label={`Actions for ${user.name}`}
-                      actions={[
-                        { label: 'Deposit', tone: 'primary', disabled: master.status !== 'Active' || user.status === 'Blocked', onSelect: () => openDialog('user-deposit', user) },
-                        { label: 'Withdraw', disabled: master.status !== 'Active' || user.status === 'Blocked' || availableUserBalance(user) <= 0, onSelect: () => openDialog('user-withdraw', user) },
-                        ...(user.status !== 'Blocked' ? [{
-                          label: `Set ${user.status === 'Active' ? 'inactive' : 'active'}`,
-                          disabled: master.status !== 'Active' || user.gameState === 'Playing',
-                          onSelect: () => changeUserStatus(user, user.status === 'Active' ? 'INACTIVE' : 'ACTIVE'),
-                        }] : []),
-                        { label: user.status === 'Blocked' ? 'Unblock' : 'Block', tone: user.status === 'Blocked' ? '' : 'danger', disabled: master.status !== 'Active' || user.gameState === 'Playing', onSelect: () => toggleBlock(user) },
-                        { label: 'Edit', disabled: master.status !== 'Active' || user.status === 'Blocked', onSelect: () => openDialog('edit-user', user) },
-                        { label: 'View history', onSelect: () => setSelectedUserId(user.id) },
-                      ]}
-                    /></td>
-                  </tr>)}
-                  {!users.length && <tr><td className="md-empty" colSpan="7">No users yet. Create a user to get started.</td></tr>}
-                </tbody></table></div></section>
-              </>}
+              {activePage === 'Users' && (
+                <MasterUsersPage
+                  master={master}
+                  users={users}
+                  selectedUserId={selectedUserId}
+                  displayedUser={displayedUser}
+                  formatAmount={formatAmount}
+                  availableUserBalance={availableUserBalance}
+                  openDialog={openDialog}
+                  changeUserStatus={changeUserStatus}
+                  toggleBlock={toggleBlock}
+                  setSelectedUserId={setSelectedUserId}
+                />
+              )}
 
-              {activePage === 'Users' && selectedUser && displayedUser && <>
-                <div className="md-heading"><div><p className="md-eyebrow">USER HISTORY</p><h1>{displayedUser.name}</h1><p className="md-subtitle">Login ID: {displayedUser.loginId} · {displayedUser.status}</p></div><button type="button" className="md-action" onClick={() => setSelectedUserId('')}>← Users</button></div>
-                <div className="md-stats"><div className="md-stat"><span>User wallet</span><strong>{formatAmount(displayedUser.wallet)}</strong></div><div className="md-stat"><span>Account status</span><strong>{displayedUser.status}</strong></div><div className="md-stat"><span>Matches</span><strong>{displayedUser.games?.length || 0}</strong></div></div>
-                <section className="md-card"><div className="md-card-head"><h2>Wallet ledger</h2><span>Deposits, withdrawals, bets, wins and fees</span></div><div className="md-table-wrap"><table className="md-table"><thead><tr><th>Type</th><th>Amount</th><th>Balance after</th><th>Note</th><th>Date</th></tr></thead><tbody>
-                  {(displayedUser.ledger || []).map((entry) => <tr key={entry.id}><td>{entry.type}</td><td>{formatAmount(entry.amount)}</td><td>{formatAmount(entry.balanceAfter)}</td><td>{entry.note}</td><td>{entry.date}</td></tr>)}
-                  {!displayedUser.ledger?.length && <tr><td className="md-empty" colSpan="5">No wallet transactions.</td></tr>}
-                </tbody></table></div></section>
-                <section className="md-card"><div className="md-card-head"><h2>Match history</h2><span>Finished results are read-only</span></div><div className="md-table-wrap"><table className="md-table"><thead><tr><th>Match ID</th><th>Players</th><th>Bet</th><th>Fee</th><th>Result</th><th>Payout</th><th>Date</th></tr></thead><tbody>
-                  {(displayedUser.games || []).map((match) => <tr key={match.id}><td><strong>{match.id}</strong></td><td>{match.players}</td><td>{formatAmount(match.bet)}</td><td>{formatAmount(match.fee)}</td><td>{match.status === 'Live' ? 'In progress' : match.result}</td><td>{formatAmount(match.payout)}</td><td>{match.date}</td></tr>)}
-                  {!displayedUser.games?.length && <tr><td className="md-empty" colSpan="7">No match history yet.</td></tr>}
-                </tbody></table></div></section>
-              </>}
+              {activePage === 'User requests' && (
+                <MasterRequestsPage
+                  master={master}
+                  userWithdrawals={userWithdrawals}
+                  pendingUserRequests={pendingUserRequests}
+                  formatAmount={formatAmount}
+                  openDialog={openDialog}
+                />
+              )}
 
-              {activePage === 'User requests' && <><div className="md-heading"><div><p className="md-eyebrow">USER WALLET REQUESTS</p><h1>User deposit and withdrawal requests</h1><p className="md-subtitle">Approve deposits to debit your Master wallet and credit the user, or approve withdrawals to do the reverse. Rejections require a reason.</p></div></div>
-                <section className="md-card"><div className="md-card-head"><h2>Requests from your users</h2><span>{pendingUserRequests.length} pending</span></div><div className="md-table-wrap"><table className="md-table"><thead><tr><th>Request ID</th><th>User</th><th>Type</th><th>Amount</th><th>Date</th><th>User balance</th><th>Status</th><th>Decision</th></tr></thead><tbody>
-                  {userWithdrawals.map((request) => <tr key={request.id}><td><strong>{request.id}</strong></td><td>{request.userName}</td><td>{request.type}</td><td>{formatAmount(request.amount)}</td><td>{request.date}</td><td>{formatAmount(request.userBalance)}</td><td><span className={`md-status ${request.status.toLowerCase()}`}>{request.status}</span></td><td>{request.status === 'Pending' ? <MasterRowActions label={`Decide on ${request.type.toLowerCase()} request from ${request.userName}`} actions={[{ label: 'Approve', tone: 'primary', disabled: master.status !== 'Active', onSelect: () => openDialog('resolve-user-request', null, request, 'Approved') }, { label: 'Reject', tone: 'danger', disabled: master.status !== 'Active', onSelect: () => openDialog('resolve-user-request', null, request, 'Rejected') }]} /> : request.reason || 'Reviewed'}</td></tr>)}
-                  {!userWithdrawals.length && <tr><td className="md-empty" colSpan="8">No wallet requests from users.</td></tr>}
-                </tbody></table></div></section>
-              </>}
+              {activePage === 'My wallet' && (
+                <MasterWalletPage
+                  master={master}
+                  stats={stats}
+                  wallet={wallet}
+                  formatAmount={formatAmount}
+                  pendingMasterWithdrawals={pendingMasterWithdrawals}
+                  availableMasterBalance={availableMasterBalance}
+                  sendWithdrawalRequest={sendWithdrawalRequest}
+                  openDialog={openDialog}
+                />
+              )}
 
-              {activePage === 'My wallet' && <><div className="md-heading"><div><p className="md-eyebrow">MASTER WALLET</p><h1>My wallet</h1><p className="md-subtitle">Request a deposit or withdrawal from the Super Admin.</p></div><div className="md-actions"><button type="button" className="md-action primary" disabled={master.status !== 'Active'} onClick={() => openDialog('deposit-request')}>Request deposit</button><button type="button" className="md-primary" disabled={!sendWithdrawalRequest} onClick={() => openDialog('withdraw-request')}>Request withdrawal</button></div></div>
-                <section className="md-card"><div className="md-card-head"><h2>Wallet balance</h2><span>Admin review required</span></div><div className="md-balance"><div><span>Master wallet</span><strong>{formatAmount(stats.wallet)}</strong></div><div><span>Pending withdrawals</span><strong>{formatAmount(pendingMasterWithdrawals)}</strong></div><div><span>Available balance</span><strong>{formatAmount(availableMasterBalance)}</strong></div></div><p className="md-explainer">Pending withdrawals are held from your available balance. Deposit requests add funds only after Super Admin approval.</p></section>
-                <section className="md-card"><div className="md-card-head"><h2>Wallet ledger</h2><span>All credits and debits</span></div><div className="md-table-wrap"><table className="md-table"><thead><tr><th>Type</th><th>Amount</th><th>Balance after</th><th>Note</th><th>Date</th></tr></thead><tbody>
-                  {wallet.ledger.map((entry) => <tr key={entry.id}><td>{entry.type}</td><td>{formatAmount(entry.amount)}</td><td>{formatAmount(entry.balanceAfter)}</td><td>{entry.note}</td><td>{entry.date}</td></tr>)}
-                  {!wallet.ledger.length && <tr><td className="md-empty" colSpan="5">No wallet transactions.</td></tr>}
-                </tbody></table></div></section>
-                <section className="md-card"><div className="md-card-head"><h2>Wallet request history</h2><span>Submitted to Super Admin</span></div><div className="md-table-wrap"><table className="md-table"><thead><tr><th>Request ID</th><th>Type</th><th>Amount</th><th>Status</th><th>Submitted</th><th>Review note</th></tr></thead><tbody>
-                  {masterRequestRows.map((request) => <tr key={request.id}><td><strong>{request.id}</strong></td><td>{request.type}</td><td>{formatAmount(request.amount)}</td><td><span className={`md-status ${request.status.toLowerCase()}`}>{request.status}</span></td><td>{request.date}</td><td>{request.reason || '—'}</td></tr>)}
-                  {!masterRequestRows.length && <tr><td className="md-empty" colSpan="6">No wallet requests yet.</td></tr>}
-                </tbody></table></div></section>
-              </>}
-
-              {activePage === 'Matches' && <><div className="md-heading"><div><p className="md-eyebrow">MATCH RECORDS</p><h1>Matches</h1><p className="md-subtitle">Live and finished matches played by your users.</p></div></div>
-                <section className="md-card"><div className="md-card-head"><h2>Users’ matches</h2><span>{matches.length} matches · live data</span></div><div className="md-table-wrap"><table className="md-table"><thead><tr><th>Match ID</th><th>Players</th><th>Bet</th><th>Platform fee</th><th>Winner</th><th>Payout</th><th>Status</th><th>Time</th></tr></thead><tbody>
-                  {matches.map((match) => <tr key={match.id}><td><strong>{match.id}</strong></td><td>{match.players}</td><td>{formatAmount(match.bet)}</td><td>{formatAmount(match.fee)}</td><td>{match.winner || '—'}</td><td>{formatAmount(match.payout)}</td><td>{match.status}</td><td>{match.date} · {match.time}</td></tr>)}
-                  {!matches.length && <tr><td className="md-empty" colSpan="8">No matches recorded yet.</td></tr>}
-                </tbody></table></div></section>
-              </>}
+              {activePage === 'Matches' && (
+                <MasterMatchesPage matches={matches} formatAmount={formatAmount} />
+              )}
             </>
           )}
         </div>
@@ -494,7 +476,7 @@ function MasterDashboard({ token, onBack }) {
               {dialog.decision === 'Rejected' && <label>Rejection reason<textarea value={reason} onChange={(event) => setReason(event.target.value)} required maxLength={500} autoFocus /></label>}
               {dialog.decision === 'Approved' && <><span>Request amount: {formatAmount(userWithdrawals.find((request) => request.id === dialog.requestId)?.amount)}</span>{dialog.requestType === 'Deposit' && <span>Available Master wallet: {formatAmount(availableMasterBalance)}</span>}</>}
             </div> : <div className="md-fields">
-              <label>Amount in credits<input type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required autoFocus /></label>
+              <label>Amount in credits<input type="number" min={(dialog.action === 'withdraw-request' || dialog.action === 'user-withdraw') ? '2000' : '0.01'} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} required autoFocus /></label>
               {dialog.action === 'user-deposit' && <span>Available Master wallet: {formatAmount(availableMasterBalance)}</span>}
               {dialog.action === 'user-withdraw' && <span>Available user wallet: {formatAmount(availableUserBalance(users.find((user) => user.id === dialog.userId) || { wallet: 0 }))}</span>}
               {(dialog.action === 'withdraw-request' || dialog.action === 'deposit-request') && <span>Current Master wallet: {formatAmount(stats?.wallet)}</span>}
