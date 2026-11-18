@@ -22,21 +22,41 @@ const BOT_SIX_CHANCE = {
   medium: 0.4,
 };
 
-const BOT_NAMES = [
-  'Ahsan', 'Ahmed', 'Kashif', 'Hassan', 'Usman', 'Bilal', 'Hamza', 'Zain',
-  'Saad', 'Abdullah', 'Ibrahim', 'Umar', 'Huzaifa', 'Ayan', 'Danish', 'Farhan',
-  'Fahad', 'Imran', 'Salman', 'Asad', 'Taha', 'Raza', 'Shahzaib', 'Arham',
-  'Mustafa', 'Adeel', 'Aqib', 'Waleed', 'Rehan', 'Sameer', 'Ayesha', 'Fatima',
-  'Maryam', 'Zainab', 'Hira', 'Sana', 'Noor', 'Mahnoor', 'Eman', 'Iqra',
-  'Laiba', 'Amna', 'Dua', 'Mehwish', 'Areeba', 'Anaya', 'Rabia', 'Komal',
-];
+const BOT_NAMES_BY_LEVEL = {
+  expert: [
+    'Ehsan', 'Ehtesham', 'Ebad', 'Ejaz', 'Emaan', 'Erum', 'Esha', 'Eshal', 'Eman', 'Eshaal',
+    'Ebrahim', 'Ehtisham', 'Eijaz', 'Ehtiram', 'Ezzah', 'Eiliyah', 'Eshna', 'Eshaan', 'Eshraq',
+    'Ebadullah', 'Ebtisam', 'Eshrat', 'Ehsan Ali', 'Ehsan Ahmed', 'Ehsan Khan', 'Ehsan Malik',
+    'Ehsan Shah', 'Ehtesham Ali', 'Ehtesham Ahmed', 'Ehtesham Khan',
+  ],
+  hard: [
+    'Hamza', 'Hassan', 'Hammad', 'Haris', 'Haseeb', 'Huzaifa', 'Hira', 'Hina', 'Hania', 'Hareem',
+    'Habib', 'Haroon', 'Hashim', 'Hadi', 'Hoorain', 'Hafsa', 'Humaira', 'Hamid', 'Husnain',
+    'Hassanain', 'Hamza Ali', 'Hamza Ahmed', 'Hassan Ali', 'Hassan Ahmed', 'Hammad Ali',
+    'Haris Khan', 'Haseeb Ali', 'Hina Noor', 'Hira Noor', 'Hania Fatima',
+  ],
+  medium: [
+    'Muhammad', 'Mustafa', 'Mahnoor', 'Maryam', 'Mehwish', 'Muneeb', 'Maira', 'Maham', 'Muzammil',
+    'Mubashir', 'Mansoor', 'Murtaza', 'Mikaal', 'Momin', 'Maaz', 'Moiz', 'Minahil', 'Mishal',
+    'Mishaal', 'Madiha', 'Muhammad Ali', 'Muhammad Ahmed', 'Muhammad Khan', 'Mustafa Ali',
+    'Mustafa Ahmed', 'Muneeb Khan', 'Maira Noor', 'Maham Fatima', 'Maryam Noor', 'Mahnoor Ali',
+  ],
+};
+const BOT_NAMES = Object.values(BOT_NAMES_BY_LEVEL).flat();
+const BOT_LEVELS = ['expert', 'hard', 'medium'];
 const rooms = new Map();
 const sessions = new Map(); // clientId -> roomId (for reconnecting)
 const botNamesByClientId = new Map();
+const botFallbackCounts = new Map();
 const queues = { normal: [], tournament: [] };
 const queueTimers = { normal: null, tournament: null };
 const processingQueues = new Set();
 let roomCounter = 0;
+
+function pickBotLevel(fallbackCount, randomValue = Math.random()) {
+  if ((fallbackCount + 1) % 3 === 0) return 'expert';
+  return BOT_LEVELS[Math.floor(randomValue * BOT_LEVELS.length)];
+}
 
 // ---------- Friend rooms (private lobbies) ----------
 
@@ -224,15 +244,16 @@ function rollDiceForCurrentPlayer(room) {
   return finishBotRoll(5);
 }
 
-function pickBotName(usedNames) {
-  const availableNames = BOT_NAMES.filter((name) => !usedNames.has(name.toLowerCase()));
+function pickBotName(usedNames, level = 'expert') {
+  const names = BOT_NAMES_BY_LEVEL[level] || BOT_NAMES_BY_LEVEL.expert;
+  const availableNames = names.filter((name) => !usedNames.has(name.toLowerCase()));
   let name;
   if (availableNames.length > 0) {
     name = availableNames[Math.floor(Math.random() * availableNames.length)];
   } else {
     let suffix = 2;
     do {
-      name = `${BOT_NAMES[(suffix - 2) % BOT_NAMES.length]} ${suffix}`;
+      name = `${names[(suffix - 2) % names.length]} ${suffix}`;
       suffix += 1;
     } while (usedNames.has(name.toLowerCase()));
   }
@@ -694,7 +715,9 @@ function destroyRoom(io, room) {
 
 // ---------- Rooms and matchmaking ----------
 
-function createRoom(io, players, { tokensToWin = 4, wager = null, mode = 2 } = {}) {
+function createRoom(io, players, {
+  tokensToWin = 4, wager = null, mode = 2, botLevel = 'expert', botOpponent = false,
+} = {}) {
   const colors = MODE_COLORS[mode];
   if (!colors) throw new RangeError('Room mode must be 2 or 4 players.');
   const id = 'room_' + ++roomCounter;
@@ -717,7 +740,8 @@ function createRoom(io, players, { tokensToWin = 4, wager = null, mode = 2 } = {
       };
     }
 
-    const name = pickBotName(usedNames);
+    const level = botLevel;
+    const name = pickBotName(usedNames, level);
     players.forEach((player) => {
       const clientId = player.socket.data.clientId;
       if (!clientId) return;
@@ -727,7 +751,7 @@ function createRoom(io, players, { tokensToWin = 4, wager = null, mode = 2 } = {
     return {
       color, name, baseName: name,
       clientId: null,
-      socketId: null, isBot: true, missed: 0, level: 'expert',
+      socketId: null, isBot: true, missed: 0, level,
     };
   });
 
@@ -758,6 +782,15 @@ function createRoom(io, players, { tokensToWin = 4, wager = null, mode = 2 } = {
       } : null,
     });
   });
+
+  if (players.length > 1) {
+    players.forEach((player) => botFallbackCounts.delete(String(player.playerId)));
+  } else if (botOpponent) {
+    const playerId = String(players[0].playerId);
+    const nextCount = ((botFallbackCounts.get(playerId) || 0) + 1) % 3;
+    if (nextCount === 0) botFallbackCounts.delete(playerId);
+    else botFallbackCounts.set(playerId, nextCount);
+  }
 
   startTurn(io, room);
 }
@@ -794,7 +827,9 @@ function checkQueue(io, queueType) {
   );
   if (expiredIndex !== -1) {
     const [player] = q.splice(expiredIndex, 1);
-    beginWageredMatch(io, queueType, [player], tokensToWin, true);
+    const fallbackCount = botFallbackCounts.get(String(player.playerId)) || 0;
+    const botLevel = pickBotLevel(fallbackCount);
+    beginWageredMatch(io, queueType, [player], tokensToWin, true, botLevel);
     return;
   }
 
@@ -814,9 +849,9 @@ function checkQueue(io, queueType) {
   }
 }
 
-function beginWageredMatch(io, queueType, players, tokensToWin, botOpponent) {
+function beginWageredMatch(io, queueType, players, tokensToWin, botOpponent, botLevel) {
   processingQueues.add(queueType);
-  startWageredRoom(io, players, tokensToWin, botOpponent)
+  startWageredRoom(io, players, tokensToWin, botOpponent, botLevel)
     .catch((error) => {
       const message = error instanceof WagerError
         ? error.message
@@ -832,7 +867,7 @@ function beginWageredMatch(io, queueType, players, tokensToWin, botOpponent) {
     });
 }
 
-async function startWageredRoom(io, players, tokensToWin, botOpponent) {
+async function startWageredRoom(io, players, tokensToWin, botOpponent, botLevel) {
   if (players.some((player) => !player.socket.connected)) {
     throw new WagerError('A player disconnected before the match could start.');
   }
@@ -845,7 +880,7 @@ async function startWageredRoom(io, players, tokensToWin, botOpponent) {
     { botOpponent }
   );
   try {
-    createRoom(io, players, { tokensToWin, wager });
+    createRoom(io, players, { tokensToWin, wager, botLevel, botOpponent });
   } catch (error) {
     try {
       await refundWageredMatch(wager.id);
@@ -1258,4 +1293,5 @@ function registerHandlers(io, socket) {
 module.exports = {
   registerHandlers, autoAct, publicState, pickBotName, forfeitGame,
   rollDiceForCurrentPlayer, takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE,
+  pickBotLevel,
 };
