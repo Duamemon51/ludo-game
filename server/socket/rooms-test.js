@@ -102,7 +102,7 @@ assert.deepStrictEqual(calculateWager(300, 0), {
 const originalRandomForDiceTest = Math.random;
 try {
   for (const [level, sixThreshold] of [
-    ['expert', 0.699],
+    ['expert', 0.649],
     ['hard', 0.499],
     ['medium', 0.399],
   ]) {
@@ -119,11 +119,11 @@ try {
     }), 5, `${level} bot should favor higher non-six rolls`);
   }
 
-  Math.random = () => 0.7;
+  Math.random = () => 0.65;
   assert.notStrictEqual(rollDiceForCurrentPlayer({
     game: engine.createGame(['red', 'yellow']),
     seats: [{ color: 'red', isBot: true, level: 'expert' }],
-  }), 6, 'expert six chance should be 70%, not 80%');
+  }), 6, 'expert six chance should be 65%, not 70%');
 
   Math.random = () => 0.5;
   assert.notStrictEqual(rollDiceForCurrentPlayer({

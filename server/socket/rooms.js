@@ -17,7 +17,7 @@ const RECONNECT_MS = 60000; // how long an empty room waits for players to come 
 const GAME_CHAT_ENABLED = false;
 const HUMAN_SIX_CHANCE = 0.20;
 const BOT_SIX_CHANCE = {
-  expert: 0.7,
+  expert: 0.65,
   hard: 0.5,
   medium: 0.4,
 };
@@ -147,12 +147,24 @@ function rollDiceForCurrentPlayer(room) {
   const expertSixCooldown = seat.level === 'expert'
     ? Math.max(0, seat.sixCooldown || 0)
     : 0;
+  const hardMediumSixCooldown = ['hard', 'medium'].includes(seat.level)
+    ? Math.max(0, seat.sixCooldown || 0)
+    : 0;
   const finishBotRoll = (value) => {
-    if (seat.level === 'expert') {
+    if (['expert', 'hard', 'medium'].includes(seat.level)) {
       if (value === 6) {
-        seat.sixCooldown = Math.random() < 0.5 ? 1 : 2;
-      } else if (room.phase === 'roll' && expertSixCooldown > 0) {
-        seat.sixCooldown = expertSixCooldown - 1;
+        seat.sixCooldown = seat.level === 'medium'
+          ? 1
+          : seat.level === 'hard'
+            ? (Math.random() < 0.5 ? 1 : 2)
+            : (Math.random() < 0.5 ? 1 : 2);
+      } else if (
+        room.phase === 'roll'
+        && (expertSixCooldown > 0 || hardMediumSixCooldown > 0)
+      ) {
+        seat.sixCooldown = Math.max(0, (seat.level === 'expert'
+          ? expertSixCooldown
+          : hardMediumSixCooldown) - 1);
       }
     }
     return value;
@@ -175,13 +187,18 @@ function rollDiceForCurrentPlayer(room) {
   );
   const adjustedSixChance = consecutiveSixes
     || expertSixCooldown > 0
+    || hardMediumSixCooldown > 0
     ? 0
     : afterSix ? sixChance * 0.25 : sixChance;
 
   const captureDice = findCaptureDice(
     room.game,
     seat.color,
-    consecutiveSixes || expertSixCooldown > 0 ? 5 : 6
+    consecutiveSixes
+      || expertSixCooldown > 0
+      || hardMediumSixCooldown > 0
+      ? 5
+      : 6
   );
   if (captureDice !== null) return finishBotRoll(captureDice);
 
@@ -755,7 +772,6 @@ function checkQueue(io, queueType) {
     for (let second = first + 1; second < q.length; second += 1) {
       if (
         q[first].playerId !== q[second].playerId
-        && q[first].masterId === q[second].masterId
         && q[first].bet === q[second].bet
       ) {
         pair = [first, second];
@@ -1098,9 +1114,6 @@ function registerHandlers(io, socket) {
     if (lobby.players.some((p) => p.socket.id === socket.id)) return;
     if (lobby.players.some((p) => String(p.playerId) === String(socket.data.playerId))) {
       return socket.emit('lobby_error', 'This player has already joined the table.');
-    }
-    if (lobby.players.some((p) => String(p.masterId) !== String(socket.data.masterId))) {
-      return socket.emit('lobby_error', 'All players must belong to the same Master to play for credits.');
     }
     if (lobby.players.length >= lobby.mode) return socket.emit('lobby_error', 'Room is full.');
     removeFromQueues(io, socket);
