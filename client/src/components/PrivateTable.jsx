@@ -77,7 +77,7 @@ export default function PrivateTable({
     !loading && active && connected && joinCode.trim().length === CODE_LENGTH;
   const feePerPlayer = Math.round((bet * feePercent / 100 + Number.EPSILON) * 100) / 100;
   const payoutFor = (playerCount) =>
-    Math.round((bet * playerCount - feePerPlayer * playerCount + Number.EPSILON) * 100) / 100;
+    Math.round((bet * playerCount - feePerPlayer + Number.EPSILON) * 100) / 100;
   const canCreate = !loading && active && connected && bet <= availableBalance;
 
   const handleCodeChange = (event) => {
@@ -163,7 +163,7 @@ export default function PrivateTable({
           </button>
         </div>
         <div className="ph-bet-hint">
-          Bet per player · {feePercent}% fee each · Available {availableBalance.toLocaleString()}
+          Bet per player · winner fee {feePercent}% · Available {availableBalance.toLocaleString()}
         </div>
 
         <div className="hg-cards hg-private-mode-cards">
