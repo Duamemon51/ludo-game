@@ -3,7 +3,7 @@ const engine = require('../game/engine');
 const { calculateWager } = require('../game/wager');
 const {
   registerHandlers, autoAct, publicState, pickBotName, forfeitGame, rollDiceForCurrentPlayer,
-  takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE,
+  takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE, pickBotLevel,
 } = require('./rooms');
 
 function makeLobbyTestSocket(id, io) {
@@ -231,20 +231,36 @@ try {
 const originalRandomForNames = Math.random;
 Math.random = () => 0;
 try {
-  const usedNames = new Set(['ahsan']);
+  assert.strictEqual(pickBotLevel(0, 0), 'expert');
+  assert.strictEqual(pickBotLevel(0, 0.5), 'hard');
+  assert.strictEqual(pickBotLevel(0, 0.99), 'medium');
+  assert.strictEqual(pickBotLevel(1, 0), 'expert');
+  assert.strictEqual(pickBotLevel(2, 0.99), 'expert');
+  console.log('PASS: bot fallback levels are random twice, then expert on every third fallback');
+
+  const usedNames = new Set(['ehsan']);
   const botNames = [pickBotName(usedNames), pickBotName(usedNames)];
-  assert.deepStrictEqual(botNames, ['Ahmed', 'Kashif']);
+  assert.deepStrictEqual(botNames, ['Ehtesham', 'Ebad']);
   assert.strictEqual(new Set(botNames.map((name) => name.toLowerCase())).size, botNames.length);
-  const previousGames = new Set(['ahsan', ...botNames.map((name) => name.toLowerCase())]);
-  assert.strictEqual(pickBotName(previousGames), 'Hassan');
+  for (const [level, initial] of [['expert', 'E'], ['hard', 'H'], ['medium', 'M']]) {
+    assert.ok(pickBotName(new Set(), level).startsWith(initial), `${level} bot names should start with ${initial}`);
+    assert.strictEqual(
+      BOT_NAMES.filter((name) => name.startsWith(initial)).length,
+      30,
+      `${level} should have 30 names`
+    );
+  }
+  const previousGames = new Set(['ehsan', ...botNames.map((name) => name.toLowerCase())]);
+  assert.strictEqual(pickBotName(previousGames), 'Ejaz');
+  const expertNames = BOT_NAMES.filter((name) => name.startsWith('E'));
   const exhaustedNames = new Set([
-    ...BOT_NAMES.map((name) => name.toLowerCase()),
-    ...Array.from({ length: BOT_NAMES.length }, (_, index) =>
-      `${BOT_NAMES[index]} ${index + 2}`.toLowerCase()
+    ...expertNames.map((name) => name.toLowerCase()),
+    ...Array.from({ length: expertNames.length }, (_, index) =>
+      `${expertNames[index]} ${index + 2}`.toLowerCase()
     ),
   ]);
-  assert.strictEqual(pickBotName(exhaustedNames), `${BOT_NAMES[0]} ${BOT_NAMES.length + 2}`);
-  console.log('PASS: bots get unique Pakistani names that do not collide with player names');
+  assert.strictEqual(pickBotName(exhaustedNames), `${expertNames[0]} ${expertNames.length + 2}`);
+  console.log('PASS: bot names are unique, Pakistani, and prefixed by difficulty level');
 } finally {
   Math.random = originalRandomForNames;
 }
