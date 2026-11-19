@@ -59,7 +59,13 @@ const LeaveIcon = () => (
   </svg>
 );
 
-export default function GameTopBar({ onLeave, winAmount, soundMuted, onToggleMute }) {
+export default function GameTopBar({
+  onLeave,
+  winAmount,
+  tournamentRound,
+  soundMuted,
+  onToggleMute,
+}) {
   const [showWinAmount, setShowWinAmount] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const barRef = useRef(null);
@@ -161,13 +167,20 @@ export default function GameTopBar({ onLeave, winAmount, soundMuted, onToggleMut
               Prize
             </div>
             <div className="game-ticket-body">
+              {tournamentRound && (
+                <span className="game-ticket-stage">Stage: {tournamentRound}</span>
+              )}
               {winAmount == null ? (
-                <span>Prize unavailable for this room</span>
+                <span>
+                  {tournamentRound
+                    ? 'Tournament prize is shown in the final.'
+                    : 'Prize unavailable for this room'}
+                </span>
               ) : (
                 <>
-                  <span>Winner prize</span>
+                  <span>{tournamentRound ? 'Tournament champion prize' : 'Winner prize'}</span>
                   <span>
-                    <b>{winAmount.toLocaleString()}</b> credits
+                    <b>{winAmount.toLocaleString()}</b>{tournamentRound ? '' : ' credits'}
                   </span>
                 </>
               )}

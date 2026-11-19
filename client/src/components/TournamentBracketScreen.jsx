@@ -48,6 +48,9 @@ export default function TournamentBracketScreen({ matches, yourSlot }) {
         }
         .tournament-pool {
           width: min(100%, 560px);
+          max-height: calc(100dvh - max(24px, env(safe-area-inset-top)) - max(24px, env(safe-area-inset-bottom)));
+          overflow-y: auto;
+          overscroll-behavior: contain;
           box-sizing: border-box;
           border: 1px solid #d5a928;
           border-radius: 22px;
@@ -73,10 +76,31 @@ export default function TournamentBracketScreen({ matches, yourSlot }) {
         @keyframes tournament-pool-spin { to { transform: rotate(360deg); } }
         @keyframes tournament-pool-enter { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
         @media (max-width: 420px) {
-          .tournament-pool { padding: 18px 14px; }
+          .tournament-pool-overlay {
+            place-items: center;
+            padding: max(8px, env(safe-area-inset-top)) 10px max(8px, env(safe-area-inset-bottom));
+          }
+          .tournament-pool {
+            width: 100%;
+            max-height: calc(100dvh - max(16px, env(safe-area-inset-top)) - max(16px, env(safe-area-inset-bottom)));
+            border-radius: 18px;
+            padding: 16px 12px;
+          }
+          .tournament-pool h1 { font-size: 25px; }
+          .tournament-pool-subtitle { margin-bottom: 12px; font-size: 12px; }
           .tournament-pool-grid { gap: 7px; }
-          .tournament-pool-match { padding: 8px; }
-          .tournament-pool-player { font-size: 12px; }
+          .tournament-pool-match { padding: 7px; border-radius: 10px; }
+          .tournament-pool-match-title { flex-wrap: wrap; font-size: 10px; }
+          .tournament-pool-player {
+            min-height: 30px;
+            display: flex;
+            align-items: center;
+            overflow-wrap: anywhere;
+            padding: 5px;
+            font-size: 11px;
+            white-space: normal;
+          }
+          .tournament-pool-starting { margin-top: 11px; }
         }
         @media (prefers-reduced-motion: reduce) {
           .tournament-pool, .tournament-pool-spinner { animation: none; }

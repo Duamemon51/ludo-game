@@ -199,9 +199,10 @@ function resizeImage(file, size) {
 
 export default function PlayerHome({
   name, onNameChange, onAvatarChange, onFindMatch, onCreateRoom, joinCode,
-  onJoinCodeChange, onJoinRoom, token, onSignOut, connected = true,
+  onJoinCodeChange, onJoinRoom, onWatchTournamentMatch, initialPage = 'home',
+  token, onSignOut, connected = true,
 }) {
-  const [page, setPage] = useState('home');
+  const [page, setPage] = useState(initialPage);
   const [bet, setBet] = useState(300);
   const [tournamentBet, setTournamentBet] = useState(300);
   const [profile, setProfile] = useState(null);
@@ -222,6 +223,7 @@ export default function PlayerHome({
   const [historyFilterOpen, setHistoryFilterOpen] = useState(false);
   const [avatar, setAvatar] = useState('');
   const [avatarError, setAvatarError] = useState('');
+  const [dismissedWaitingRound, setDismissedWaitingRound] = useState(null);
   const fileInputRef = useRef(null);
   const historyFilterRef = useRef(null);
   const historyPageSize = 6;
@@ -318,6 +320,29 @@ export default function PlayerHome({
   const championName = tournamentBracket[2]?.matches[0]?.players.find((player) => player.isWinner)?.name;
   const tournamentRoundName = ['Quarter-finals', 'Semi-finals', 'Final'][currentTournament?.currentRound - 1];
   const isTournamentEliminated = currentTournament?.participantStatus === 'ELIMINATED';
+  const showCurrentBracket = Boolean(currentTournament && !isTournamentEliminated);
+  const isWaitingForTournament = currentTournament?.status === 'IN_PROGRESS'
+    && currentTournament.participantStatus === 'WAITING';
+  const waitingRoundKey = isWaitingForTournament
+    ? `${currentTournament.id}:${currentTournament.currentRound}`
+    : null;
+  const waitingModalOpen = isWaitingForTournament && dismissedWaitingRound !== waitingRoundKey;
+  const hasWatchableLiveMatch = tournamentBracket.some((round) =>
+    round.matches.some((match) =>
+      match.status === 'IN_PROGRESS'
+      && !match.players.some((player) => player.slot === currentTournament?.participantSlot)
+    )
+  );
+  const dismissWaitingModal = () => setDismissedWaitingRound(waitingRoundKey);
+  const browseLiveMatches = () => {
+    dismissWaitingModal();
+    window.requestAnimationFrame(() => {
+      document.querySelector('.ph-bracket-panel')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    });
+  };
   const currentTournamentMessage = isTournamentEliminated
     ? 'You were eliminated from this tournament.'
     : currentTournament?.status === 'COMPLETED'
@@ -636,6 +661,8 @@ export default function PlayerHome({
         .ph-bracket-match { min-width: 0; margin-bottom: 8px; border: 1px solid #ffffff24; border-radius: 10px; padding: 8px; color: #3b2412; background: #fff9e9; }
         .ph-bracket-match:last-child { margin-bottom: 0; }
         .ph-bracket-match-head { display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-bottom: 5px; color: #806646; font-size: 10px; }
+        .ph-bracket-watch { margin: 0 !important; border: 1px solid #277447; border-radius: 99px; padding: 3px 8px; color: #fff; background: #277447; font: 800 10px system-ui, sans-serif; cursor: pointer; }
+        .ph-bracket-watch:disabled { opacity: .5; cursor: not-allowed; }
         .ph-bracket-status { flex: none; border-radius: 99px; padding: 2px 6px; background: #e9dfc5; font-weight: 800; }
         .ph-bracket-status.live { color: #fff; background: #c62828; }
         .ph-bracket-status.completed { color: #fff; background: #277447; }
@@ -658,6 +685,13 @@ export default function PlayerHome({
         .ph-modal { width: min(100%, 390px); border: 1px solid #ffffff30; border-radius: 18px; padding: 22px; background: #29190e; }
         .ph-modal input { width: 100%; margin: 12px 0; border: 1px solid #ffffff35; border-radius: 10px; padding: 11px; color: white; background: #ffffff10; }
         .ph-modal-actions { display: flex; gap: 10px; }
+        .ph-tournament-wait-backdrop { z-index: 80; }
+        .ph-tournament-wait-head { display: flex; align-items: flex-start; gap: 10px; }
+        .ph-tournament-wait-head h2 { flex: 1; margin: 0; color: #fff3cc; font-size: 20px; }
+        .ph-tournament-wait-close { flex: none; border: 0; padding: 0 4px; color: #ffe9b0; background: transparent; font-size: 26px; line-height: 1; cursor: pointer; }
+        .ph-tournament-wait-modal p { margin: 12px 0 18px; color: #ffe9b0; }
+        .ph-tournament-wait-modal .ph-modal-actions { flex-direction: column; }
+        .ph-tournament-wait-modal .ph-modal-actions > * { width: 100%; min-height: 44px; }
 
         /* mobile profile menu (only used on small screens) */
         .ph-scrim { position: fixed; inset: 0; z-index: 30; background: #0009; animation: ph-fade .18s ease-out; }
@@ -900,6 +934,8 @@ export default function PlayerHome({
           .ph-tournament-panel .ph-tournament .ph-muted { margin-top: 6px; }
           .ph-modal-backdrop { place-items: end center; padding: 0; }
           .ph-modal { width: 100%; border-radius: 24px 24px 0 0; padding: 20px 18px calc(20px + env(safe-area-inset-bottom, 0px)); }
+          .ph-tournament-wait-backdrop { place-items: center; padding: 16px; }
+          .ph-tournament-wait-modal { width: min(100%, 390px); max-height: calc(100dvh - 32px); overflow-y: auto; border-radius: 18px; padding: 20px 18px; }
           .ph-modal input { min-height: 46px; font-size: 16px; }
           .ph-modal-actions { flex-direction: column-reverse; }
           .ph-modal-actions .ph-back { min-height: 44px; background: #ffffff1f; color: #ffe9b0; }
@@ -1140,6 +1176,20 @@ export default function PlayerHome({
           .ph-wallet { min-width: 100px; height: 42px; padding: 4px 6px; }
           .ph-wallet strong { font-size: 15px; }
         }
+        @media (max-width: 700px) {
+          .ph-tournament-panel { width: 100%; min-width: 0; }
+          .ph-bracket-panel { min-width: 0; padding: 10px; }
+          .ph-bracket { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+          .ph-bracket-round { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 8px; }
+          .ph-bracket-round h4 { grid-column: 1 / -1; margin-bottom: 0; }
+          .ph-bracket-round:last-child .ph-bracket-match { grid-column: 1 / -1; }
+          .ph-bracket-match { min-width: 0; margin-bottom: 0; padding: 7px; }
+          .ph-bracket-match-head { flex-wrap: wrap; }
+        }
+        @media (max-width: 380px) {
+          .ph-bracket-round { grid-template-columns: minmax(0, 1fr); }
+          .ph-bracket-round h4 { grid-column: 1; }
+        }
       `}</style>
 
       <div className="ph-scene" aria-hidden="true">
@@ -1308,18 +1358,27 @@ export default function PlayerHome({
 
           {SHOW_TOURNAMENT_UI && page === 'tournaments' && (
             <section className="ph-panel ph-tournament-panel">
-              <PanelHead className="ph-close-only" title="8-player Knockout" onBack={() => setPage('home')} closeOnly />
-              <p>One-time entry. Win up to {tournamentPayout.toLocaleString()} credits after fees; the final prize depends on tournament entries.</p>
-              {currentTournament && !isTournamentEliminated && (
+              <PanelHead
+                className="ph-close-only"
+                title={showCurrentBracket ? '' : '8-player Knockout'}
+                onBack={() => setPage('home')}
+                closeOnly
+              />
+              {!showCurrentBracket && (
+                <p>One-time entry. Win up to {tournamentPayout.toLocaleString()} credits after fees; the final prize depends on tournament entries.</p>
+              )}
+              {showCurrentBracket && (
                 <>
-                  <div className="ph-tournament" aria-live="polite">
-                    <h3>Tournament status</h3>
-                    <p>{currentTournament.status === 'COMPLETED'
-                      ? 'All rounds complete'
-                      : `${tournamentRoundName} · ${completedCurrentMatches}/${currentRoundMatches.length} matches complete`}
-                    </p>
-                    <p>{currentTournamentMessage}</p>
-                  </div>
+                  {!isWaitingForTournament && (
+                    <div className="ph-tournament" aria-live="polite">
+                      <h3>Tournament status</h3>
+                      <p>{currentTournament.status === 'COMPLETED'
+                        ? 'All rounds complete'
+                        : `${tournamentRoundName} · ${completedCurrentMatches}/${currentRoundMatches.length} matches complete`}
+                      </p>
+                      <p>{currentTournamentMessage}</p>
+                    </div>
+                  )}
                   <div className="ph-bracket-panel" aria-label="Tournament bracket">
                     <h3>8-player bracket</h3>
                     <div className="ph-bracket">
@@ -1332,6 +1391,9 @@ export default function PlayerHome({
                               : match.status === 'COMPLETED'
                                 ? 'Completed'
                                 : 'Waiting';
+                            const isParticipantMatch = match.players.some(
+                              (player) => player.slot === currentTournament.participantSlot
+                            );
                             return (
                               <article className="ph-bracket-match" key={match.matchNo}>
                                 <div className="ph-bracket-match-head">
@@ -1339,6 +1401,21 @@ export default function PlayerHome({
                                   <span className={`ph-bracket-status ${match.status.toLowerCase()}`}>
                                     {statusLabel}
                                   </span>
+                                  {match.status === 'IN_PROGRESS' && !isParticipantMatch && (
+                                    <button
+                                      type="button"
+                                      className="ph-bracket-watch"
+                                      disabled={!connected}
+                                      aria-label={`Watch ${round.title.toLowerCase()} match ${match.matchNo}`}
+                                      onClick={() => onWatchTournamentMatch?.(
+                                        currentTournament.id,
+                                        round.number,
+                                        match.matchNo
+                                      )}
+                                    >
+                                      Watch
+                                    </button>
+                                  )}
                                 </div>
                                 {match.players.map((player, index) => (
                                   <div
@@ -1358,8 +1435,11 @@ export default function PlayerHome({
                   </div>
                 </>
               )}
-              <div className="ph-grid">
-                <div className="ph-tournament-bet-content" key={TOURNAMENT.id}>
+              {(!currentTournament
+                || ['COMPLETED', 'CANCELLED'].includes(currentTournament.status)
+                || isTournamentEliminated) && (
+                <div className="ph-grid">
+                  <div className="ph-tournament-bet-content" key={TOURNAMENT.id}>
                   <span className="ph-tournament-label">Select your bet</span>
                   <div className="ph-bet-selector" role="group" aria-label="Tournament bet amount">
                     <button
@@ -1412,11 +1492,60 @@ export default function PlayerHome({
                   >
                     {tournament.enabled ? 'Join tournament' : 'Tournament unavailable'}
                   </button>
+                  </div>
                 </div>
-              </div>
-              {!active && <div className="ph-lock">Your account is inactive. You cannot join a tournament.</div>}
-              {!connected && <div className="ph-lock">Connect to the game server to join.</div>}
+              )}
+              {(!currentTournament
+                || ['COMPLETED', 'CANCELLED'].includes(currentTournament.status)
+                || isTournamentEliminated) && (
+                <>
+                  {!active && <div className="ph-lock">Your account is inactive. You cannot join a tournament.</div>}
+                  {!connected && <div className="ph-lock">Connect to the game server to join.</div>}
+                </>
+              )}
             </section>
+          )}
+
+          {page === 'tournaments' && isWaitingForTournament && waitingModalOpen && (
+            <div className="ph-modal-backdrop ph-tournament-wait-backdrop">
+              <section
+                className="ph-modal ph-tournament-wait-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="ph-tournament-wait-title"
+              >
+                <div className="ph-tournament-wait-head">
+                  <h2 id="ph-tournament-wait-title">Waiting for the next round</h2>
+                  <button
+                    type="button"
+                    className="ph-tournament-wait-close"
+                    aria-label="Close waiting notice"
+                    onClick={dismissWaitingModal}
+                  >
+                    ×
+                  </button>
+                </div>
+                <p>{currentTournamentMessage}</p>
+                <div className="ph-modal-actions">
+                  {hasWatchableLiveMatch && (
+                    <button
+                      type="button"
+                      className="ph-primary"
+                      onClick={browseLiveMatches}
+                    >
+                      Watch live match
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="ph-back"
+                    onClick={dismissWaitingModal}
+                  >
+                    Keep waiting
+                  </button>
+                </div>
+              </section>
+            </div>
           )}
 
           {page === 'wallet' && (

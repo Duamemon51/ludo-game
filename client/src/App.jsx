@@ -19,6 +19,11 @@ const GAME_CHAT_ENABLED = false;
 const TURN_SECONDS = 20;
 const BUBBLE_MS = 4500;
 const RESULT_REVEAL_MS = 2600;
+const TOURNAMENT_ROUND_LABELS = {
+  1: 'Quarter-final',
+  2: 'Semi-final',
+  3: 'Final',
+};
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const urlCode = (new URLSearchParams(window.location.search).get('room') || '').toUpperCase();
 let uiAudioContext;
@@ -120,11 +125,15 @@ export default function App() {
   const [queueLeft, setQueueLeft] = useState(0);
   const [matchmakingType, setMatchmakingType] = useState('normal');
   const [tournamentBracketPreview, setTournamentBracketPreview] = useState(null);
+  const [tournamentRound, setTournamentRound] = useState(null);
+  const [spectatorMatch, setSpectatorMatch] = useState(null);
+  const [returnToTournament, setReturnToTournament] = useState(false);
   const [name, setName] = useState(
     () => localStorage.getItem('ludo-name') || 'Player' + Math.floor(100 + Math.random() * 900)
   );
   const autoJoined = useRef(false);
   const matchmakingRequestRef = useRef(null);
+  const spectatorMatchRef = useRef(null);
   const cancelledMatchmakingRef = useRef(false);
   const resultTimerRef = useRef(null);
   const leaveRequestRef = useRef(false);
@@ -223,6 +232,7 @@ export default function App() {
   };
 
   const signOut = () => {
+    setReturnToTournament(false);
     localStorage.removeItem(AUTH_STORAGE_KEY);
     socket.disconnect();
     socket.connect();
@@ -243,7 +253,11 @@ export default function App() {
   useEffect(() => {
     const onConnect = () => {
       setConnected(true);
-      socket.emit('resume_game'); // ask the server to put us back in our game, if any
+      if (spectatorMatchRef.current) {
+        socket.emit('watch_tournament_match', spectatorMatchRef.current);
+      } else {
+        socket.emit('resume_game');
+      }
     };
     const onDisconnect = () => {
       setConnected(false); // keep the board on screen while reconnecting
@@ -264,6 +278,8 @@ export default function App() {
       setGame(null);
       setLobby(null);
       setTournamentBracketPreview(null);
+      spectatorMatchRef.current = null;
+      setSpectatorMatch(null);
     };
     const onQueued = ({ waitMs, requestId, queueType }) => {
       if (
@@ -282,10 +298,11 @@ export default function App() {
       setStatus('bracket');
     };
     const onLobby = (data) => {
+      setReturnToTournament(false);
       setLobby(data);
       setStatus('lobby');
     };
-    const onMatch = ({ yourColor, requestId, wager }) => {
+    const onMatch = ({ yourColor, requestId, wager, tournament }) => {
       if (
         requestId
         && (cancelledMatchmakingRef.current || requestId !== matchmakingRequestRef.current)
@@ -296,28 +313,58 @@ export default function App() {
       setConnected(true);
       matchmakingRequestRef.current = null;
       cancelledMatchmakingRef.current = false;
+      setReturnToTournament(false);
       setMatchmakingType('normal');
       setTournamentBracketPreview(null);
+      spectatorMatchRef.current = null;
+      setSpectatorMatch(null);
       leaveRequestRef.current = false;
       pendingOverRef.current = null;
       clearTimeout(resultTimerRef.current);
       playMatchFoundChime();
-      setMatchWinAmount(wager?.payout ?? null);
+      setMatchWinAmount(wager?.payout ?? (
+        tournament?.round === 3 ? tournament.prizePool ?? null : null
+      ));
+      setTournamentRound(TOURNAMENT_ROUND_LABELS[tournament?.round] || null);
       setMyColor(yourColor);
       setHomeView('menu');
       setLobby(null);
       setBubbles({});
       setStatus('playing');
     };
-    const onTournamentUpdate = ({ message, status: tournamentStatus }) => {
+    const onTournamentWatchStarted = ({ tournamentId, roundNo, matchNo }) => {
+      const match = { tournamentId, roundNo, matchNo };
+      spectatorMatchRef.current = match;
+      setSpectatorMatch(match);
+      setTournamentRound(TOURNAMENT_ROUND_LABELS[roundNo] || null);
+      setMatchWinAmount(null);
+      setMyColor(null);
+      setGameResult(null);
+      setGame(null);
+      setStatus('spectating');
+    };
+    const onTournamentWatchError = (message) => {
+      if (statusRef.current === 'spectating') {
+        spectatorMatchRef.current = null;
+        setSpectatorMatch(null);
+        setTournamentRound(null);
+        setGame(null);
+        setReturnToTournament(true);
+        setStatus('idle');
+      }
+      showNotice(message);
+    };
+    const onTournamentUpdate = ({ message, status: tournamentStatus, round }) => {
       if (!message) return;
       window.dispatchEvent(new Event('player:refresh'));
       showNotice({
         title: tournamentStatus === 'COMPLETED'
           ? 'Tournament complete'
-          : tournamentStatus === 'WAITING'
-            ? 'Waiting for other matches'
-            : 'Tournament update',
+          : round === 3 && ['ROUND_READY', 'ROUND_STARTED'].includes(tournamentStatus)
+            ? 'Final starting'
+            : tournamentStatus === 'WAITING'
+              ? 'Waiting for other matches'
+              : 'Tournament update',
         message,
         type: tournamentStatus === 'COMPLETED' ? 'success' : 'info',
       });
@@ -339,6 +386,17 @@ export default function App() {
       showNotice(message);
     };
     const onOver = (result) => {
+      if (statusRef.current === 'spectating') {
+        spectatorMatchRef.current = null;
+        setSpectatorMatch(null);
+        setTournamentRound(null);
+        setGame(null);
+        setReturnToTournament(true);
+        setStatus('idle');
+        window.dispatchEvent(new Event('player:refresh'));
+        showNotice('This match has ended.');
+        return;
+      }
       if (leaveRequestRef.current) {
         pendingOverRef.current = result;
         return;
@@ -373,6 +431,8 @@ export default function App() {
     socket.on('no_game', onNoGame);
     socket.on('queued', onQueued);
     socket.on('tournament_bracket', onTournamentBracket);
+    socket.on('tournament_watch_started', onTournamentWatchStarted);
+    socket.on('tournament_watch_error', onTournamentWatchError);
     socket.on('lobby_update', onLobby);
     socket.on('lobby_error', showNotice);
     socket.on('match_found', onMatch);
@@ -383,7 +443,13 @@ export default function App() {
     socket.on('game_over', onOver);
     socket.on('tournament_update', onTournamentUpdate);
     if (GAME_CHAT_ENABLED) socket.on('chat_message', onChat);
-    if (socket.connected) socket.emit('resume_game'); // page was refreshed while already connected
+    if (socket.connected) {
+      if (spectatorMatchRef.current) {
+        socket.emit('watch_tournament_match', spectatorMatchRef.current);
+      } else {
+        socket.emit('resume_game');
+      }
+    }
 
     return () => {
       socket.off('connect', onConnect);
@@ -395,6 +461,8 @@ export default function App() {
       socket.off('no_game', onNoGame);
       socket.off('queued', onQueued);
       socket.off('tournament_bracket', onTournamentBracket);
+      socket.off('tournament_watch_started', onTournamentWatchStarted);
+      socket.off('tournament_watch_error', onTournamentWatchError);
       socket.off('lobby_update', onLobby);
       socket.off('lobby_error', showNotice);
       socket.off('match_found', onMatch);
@@ -503,6 +571,16 @@ export default function App() {
     setMatchmakingType('normal');
     setStatus('idle');
   };
+  const stopWatchingTournament = () => {
+    socket.emit('stop_watching_tournament_match');
+    spectatorMatchRef.current = null;
+    setSpectatorMatch(null);
+    setTournamentRound(null);
+    setGame(null);
+    setReturnToTournament(true);
+    setStatus('idle');
+    window.dispatchEvent(new Event('player:refresh'));
+  };
   const leaveLobby = () => {
     socket.emit('leave_room');
     setLobby(null);
@@ -515,6 +593,9 @@ export default function App() {
     setGame(null);
     setGameResult(null);
     setMatchWinAmount(null);
+    setTournamentRound(null);
+    spectatorMatchRef.current = null;
+    setSpectatorMatch(null);
     setMyColor(null);
     setStatus('idle');
   };
@@ -597,7 +678,7 @@ export default function App() {
       encodeURIComponent(`Play Ludo with me! Room code: ${lobby.code}\n${shareLink}`)
     : '';
 
-  const inGame = Boolean(game && ['playing', 'finishing', 'over'].includes(status));
+  const inGame = Boolean(game && ['playing', 'finishing', 'over', 'spectating'].includes(status));
   const homeScreen = connected && (status === 'idle' || status === 'queued');
   const boardRotation = (isMobileLayout ? MOBILE_BOARD_ROTATION : BOARD_ROTATION)[myColor] ?? 0;
   const panelSlots = Object.fromEntries(
@@ -732,6 +813,9 @@ export default function App() {
           joinCode={joinCode}
           onJoinCodeChange={setJoinCode}
           onJoinRoom={joinRoom}
+          initialPage={returnToTournament ? 'tournaments' : 'home'}
+          onWatchTournamentMatch={(tournamentId, roundNo, matchNo) =>
+            socket.emit('watch_tournament_match', { tournamentId, roundNo, matchNo })}
           token={authSession?.token}
           onSignOut={signOut}
           connected={connected}
@@ -762,11 +846,30 @@ export default function App() {
       )}
 
       {inGame && (
-        <div className="game" inert={!connected}>
+        <>
+          {status === 'spectating' && spectatorMatch && (
+            <div
+              className="spectator-top-bar"
+              role="status"
+              aria-label={`Watching ${tournamentRound} match ${spectatorMatch.matchNo}`}
+            >
+              <span className="spectator-label-wide">Watching {tournamentRound} · Match {spectatorMatch.matchNo}</span>
+              <span className="spectator-label-compact">{tournamentRound} · Match {spectatorMatch.matchNo}</span>
+              <button
+                type="button"
+                aria-label="Back to tournament bracket"
+                onClick={stopWatchingTournament}
+              >
+                Back
+              </button>
+            </div>
+          )}
+          <div className="game" inert={!connected || status === 'spectating'}>
           {status === 'playing' && (
             <GameTopBar
               onLeave={() => setLeaveOpen(true)}
               winAmount={matchWinAmount}
+              tournamentRound={tournamentRound}
               soundMuted={soundMuted}
               onToggleMute={toggleSound}
             />
@@ -779,19 +882,24 @@ export default function App() {
             captures={game.captures}
             lastMove={game.lastMove}
             celebrateWinner={status === 'finishing' ? game.winner : null}
-            turn={status === 'playing' ? game.turn : null}
+            turn={status === 'playing' || status === 'spectating' ? game.turn : null}
             myColor={myColor}
             rotation={boardRotation}
             movable={movable}
             diceOptions={diceOptions}
             rollId={game.rollId}
             soundMuted={soundMuted}
-            onMove={(idx, diceId) => socket.emit('move_token', { tokenIdx: idx, diceId })}
+            onMove={(idx, diceId) => {
+              if (status === 'playing') {
+                socket.emit('move_token', { tokenIdx: idx, diceId });
+              }
+            }}
           />
 
           <div className="prow prow-bottom">{colorsInRow('bottom').map(renderSlot)}</div>
 
         </div>
+        </>
       )}
 
       {status === 'over' && game && (
