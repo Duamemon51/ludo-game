@@ -540,6 +540,7 @@ export default function PlayerHome({
         .ph-prize-summary span { display: block; color: #8b7552; font-size: 10px; }
         .ph-prize-summary strong { display: block; margin-top: 3px; color: #4a3518; font-size: 13px; overflow-wrap: anywhere; }
         .ph-prize-summary .ph-prize-winner strong { color: #277447; }
+        .ph-tournament-bet-content .ph-prize-summary .ph-prize-winner strong { font-size: 16px; }
         .ph-tournament-join { width: 100%; min-height: 46px; }
         .ph-tournament-error { margin: 10px 0 0; color: #a52e2e !important; font-size: 12px; }
         .ph-primary { border: 0; border-radius: 12px; padding: 12px 20px; color: #4a3000; background: linear-gradient(180deg, #fff1a8, #fcc419 55%, #e0a000); box-shadow: 0 4px 0 #9a6f00; font-weight: 800; }
@@ -1218,7 +1219,7 @@ export default function PlayerHome({
           {SHOW_TOURNAMENT_UI && page === 'tournaments' && (
             <section className="ph-panel ph-tournament-panel">
               <PanelHead className="ph-close-only" title="8-player Knockout" onBack={() => setPage('home')} closeOnly />
-              <p>One-time entry. The champion wins the prize pool after platform fees.</p>
+              <p>One-time entry. Win up to {tournamentPayout.toLocaleString()} credits after fees; the final prize depends on tournament entries.</p>
               {currentTournament && (
                 <div className="ph-tournament" aria-live="polite">
                   <h3>Your active tournament</h3>
@@ -1268,9 +1269,9 @@ export default function PlayerHome({
                     One-time entry · 300 to 5,000 credits
                   </div>
                   <div className="ph-prize-summary" aria-live="polite">
-                    <div><span>Max prize pool</span><strong>{tournamentPot.toLocaleString()}</strong></div>
-                    <div><span>Platform fee ({feePercent}% of one entry)</span><strong>{tournamentFee.toLocaleString()}</strong></div>
-                    <div className="ph-prize-winner"><span>Max champion payout</span><strong>{tournamentPayout.toLocaleString()}</strong></div>
+                    <div><span>Maximum prize pool</span><strong>{tournamentPot.toLocaleString()}</strong></div>
+                    <div><span>Platform fee ({feePercent}% of entry)</span><strong>{tournamentFee.toLocaleString()}</strong></div>
+                    <div className="ph-prize-winner"><span>You can win up to</span><strong>{tournamentPayout.toLocaleString()} credits</strong></div>
                   </div>
                   <button
                     type="button"
