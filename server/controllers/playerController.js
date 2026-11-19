@@ -153,11 +153,53 @@ async function getTournaments(req, res, next) {
        WHERE setting_key IN ('tournament_enabled', 'tournament_entry', 'platform_fee_percent')`
     );
     const values = Object.fromEntries(rows.map((row) => [row.setting_key, row.setting_value]));
+    const [activeRows] = await pool.execute(
+      `SELECT t.id, t.status, t.current_round, t.entry_fee, t.prize_pool, t.payout,
+        tp.slot, tp.status AS participant_status
+       FROM tournaments t
+       JOIN tournament_participants tp ON tp.tournament_id = t.id
+       WHERE tp.player_id = ? AND t.status = 'IN_PROGRESS'
+       ORDER BY t.created_at DESC LIMIT 1`,
+      [req.playerId]
+    );
+    let current = null;
+    if (activeRows[0]) {
+      const active = activeRows[0];
+      const [matches] = await pool.execute(
+        `SELECT tm.round_no, tm.match_no, tm.status, tm.winner_slot,
+          p1.participant_name AS player1_name, p2.participant_name AS player2_name
+         FROM tournament_matches tm
+         JOIN tournament_participants p1
+           ON p1.tournament_id = tm.tournament_id AND p1.slot = tm.player1_slot
+         JOIN tournament_participants p2
+           ON p2.tournament_id = tm.tournament_id AND p2.slot = tm.player2_slot
+         WHERE tm.tournament_id = ? ORDER BY tm.round_no, tm.match_no`,
+        [active.id]
+      );
+      current = {
+        id: active.id,
+        status: active.status,
+        currentRound: Number(active.current_round),
+        participantSlot: Number(active.slot),
+        participantStatus: active.participant_status,
+        entryFee: Number(active.entry_fee),
+        prizePool: Number(active.prize_pool),
+        payout: Number(active.payout),
+        matches: matches.map((match) => ({
+          round: Number(match.round_no),
+          match: Number(match.match_no),
+          status: match.status,
+          winnerSlot: match.winner_slot == null ? null : Number(match.winner_slot),
+          players: [match.player1_name, match.player2_name],
+        })),
+      };
+    }
     res.json({
       enabled: values.tournament_enabled === 'true',
       entryFee: Number(values.tournament_entry ?? 300),
       feePercent: Number(values.platform_fee_percent ?? 10),
-      mode: 'Quick 1 vs 1',
+      mode: '8-player knockout',
+      current,
     });
   } catch (error) {
     next(error);
@@ -259,7 +301,13 @@ function postWithdrawals(req, res, next) { return createWalletRequest(req, res, 
 function handleError(error, req, res, next) {
   if (res.headersSent) return next(error);
   if (error instanceof HttpError) return res.status(error.status).json({ error: error.message });
-  if (error.code === 'ER_NO_SUCH_TABLE' || error.code === 'ECONNREFUSED' || error.code === 'PROTOCOL_CONNECTION_LOST') {
+  if (error.code === 'ER_NO_SUCH_TABLE') {
+    console.error('Player database schema is missing a required table:', error.message);
+    return res.status(503).json({
+      error: 'Tournament tables are missing. Apply server/db/migrations/005_tournament_brackets.sql.',
+    });
+  }
+  if (error.code === 'ECONNREFUSED' || error.code === 'PROTOCOL_CONNECTION_LOST') {
     console.error('Player database unavailable:', error.code);
     return res.status(503).json({ error: 'Database is unavailable. Check XAMPP MariaDB and server database settings.' });
   }

@@ -2,6 +2,14 @@ const engine = require('../game/engine');
 const { chooseTurnMove, scoreMove } = require('../game/bot');
 const { randomUUID } = require('node:crypto');
 const { WagerError, createWageredMatch, settleWageredMatch, refundWageredMatch } = require('../game/wager');
+const {
+  TournamentError,
+  cancelTournament,
+  completeTournamentMatch,
+  createTournament,
+  startTournamentMatch,
+} = require('../game/tournament-store');
+const { buildParticipants, createRoundPairs } = require('../game/tournament-bracket');
 
 const MODE_COLORS = {
   2: ['red', 'yellow'],
@@ -51,6 +59,8 @@ const botFallbackCounts = new Map();
 const queues = { normal: [], tournament: [] };
 const queueTimers = { normal: null, tournament: null };
 const processingQueues = new Set();
+const tournaments = new Map();
+const tournamentByClientId = new Map();
 let roomCounter = 0;
 
 function pickBotLevel(fallbackCount, randomValue = Math.random()) {
@@ -607,7 +617,17 @@ function finishGame(io, room) {
 
   const finish = async () => {
     let wagerResult = null;
-    if (room.match) {
+    let tournamentResult = null;
+    if (room.tournamentMatch) {
+      const winner = seatOf(room, room.game.winner);
+      if (!winner?.tournamentSlot) throw new TournamentError('The tournament match winner could not be found.');
+      tournamentResult = await completeTournamentMatch(
+        room.tournamentMatch.tournamentId,
+        room.tournamentMatch.roundNo,
+        room.tournamentMatch.matchNo,
+        winner.tournamentSlot
+      );
+    } else if (room.match) {
       const winner = seatOf(room, room.game.winner);
       try {
         wagerResult = await settleWageredMatch(room.match.id, winner?.playerId);
@@ -635,8 +655,35 @@ function finishGame(io, room) {
     io.to(room.id).emit('game_over', {
       winner: room.game.winner,
       wager: wagerResult,
+      tournament: room.tournamentMatch ? {
+        id: room.tournamentMatch.tournamentId,
+        round: room.tournamentMatch.roundNo,
+        match: room.tournamentMatch.matchNo,
+        status: tournamentResult?.status || 'IN_PROGRESS',
+      } : null,
     });
     destroyRoom(io, room);
+    if (room.tournamentMatch && tournamentResult) {
+      try {
+        await finishTournamentMatch(io, room, tournamentResult);
+      } catch (error) {
+        console.error(`Could not advance tournament ${room.tournamentMatch.tournamentId}:`, error);
+        const runtime = tournaments.get(room.tournamentMatch.tournamentId);
+        if (runtime) {
+          try {
+            await abortTournamentRuntime(io, runtime, 'The tournament could not continue. Entry fees are being refunded.');
+          } catch (refundError) {
+            console.error(`Could not refund tournament ${runtime.id}:`, refundError);
+            emitTournamentUpdate(runtime, {
+              status: 'ERROR',
+              onlySlots: runtime.participants.filter((participant) => !participant.isBot)
+                .map((participant) => participant.slot),
+              message: 'Tournament processing needs support. Please contact support before playing again.',
+            });
+          }
+        }
+      }
+    }
   };
 
   finish().catch((error) => {
@@ -775,6 +822,7 @@ function destroyRoom(io, room) {
 
 function createRoom(io, players, {
   tokensToWin = 4, wager = null, mode = 2, botLevel = 'expert', botOpponent = false,
+  tournamentParticipants = null, tournamentMatch = null,
 } = {}) {
   const colors = MODE_COLORS[mode];
   if (!colors) throw new RangeError('Room mode must be 2 or 4 players.');
@@ -785,17 +833,12 @@ function createRoom(io, players, {
     botNamesByClientId.get(clientId)?.forEach((name) => usedNames.add(name.toLowerCase()));
   });
 
-  const seats = players.map((p, i) => ({
-    color: colors[i], name: p.name, baseName: p.name,
-    clientId: p.socket.data.clientId || null,
-    playerId: p.playerId || null,
-    masterId: p.masterId || null,
-    matchmakingId: p.matchmakingId || null,
-    socketId: p.socket.id, isBot: false, missed: 0, level: 'medium',
+  const roster = tournamentParticipants || players.map((player) => ({
+    ...player,
+    isBot: false,
+    level: 'medium',
   }));
-  if (botOpponent) {
-    const color = colors[players.length];
-    if (!color) throw new RangeError('A bot opponent needs an available seat.');
+  if (!tournamentParticipants && botOpponent) {
     const level = botLevel;
     const name = pickBotName(usedNames, level);
     players.forEach((player) => {
@@ -804,16 +847,39 @@ function createRoom(io, players, {
       if (!botNamesByClientId.has(clientId)) botNamesByClientId.set(clientId, new Set());
       botNamesByClientId.get(clientId).add(name.toLowerCase());
     });
-    seats.push({
-      color, name, baseName: name,
-      clientId: null,
-      socketId: null, isBot: true, missed: 0, level,
-    });
+    roster.push({ name, isBot: true, level });
   }
+  if (
+    (tournamentParticipants && roster.length !== colors.length)
+    || roster.length > colors.length
+  ) {
+    throw new RangeError('The room participant count does not match its mode.');
+  }
+
+  const seats = roster.map((participant, index) => {
+    const socket = participant.socket;
+    const connected = Boolean(socket?.connected);
+    const isBot = Boolean(participant.isBot || (!participant.isBot && !connected));
+    return {
+      color: colors[index],
+      name: participant.name,
+      baseName: participant.name,
+      clientId: participant.clientId || socket?.data.clientId || null,
+      playerId: participant.playerId || null,
+      masterId: participant.masterId || null,
+      matchmakingId: participant.matchmakingId || null,
+      tournamentSlot: participant.slot || null,
+      socketId: connected ? socket.id : null,
+      isBot,
+      missed: 0,
+      level: participant.level || (isBot ? 'takeover' : 'medium'),
+    };
+  });
 
   const room = {
     id, mode, seats,
     match: wager,
+    tournamentMatch,
     game: engine.createGame(seats.map((seat) => seat.color), { tokensToWin }),
     phase: 'roll', dice: null, diceOptions: [], pendingDiceOptions: [], captureDiceOptions: [], dieRollId: 0,
     rolledDice: [], rolledDiceIds: [], usedDiceIds: [], rollId: 0, validMoves: [], lastMove: null,
@@ -822,15 +888,35 @@ function createRoom(io, players, {
   };
   rooms.set(id, room);
 
-  players.forEach((p, i) => {
-    p.socket.join(id);
-    p.socket.data.roomId = id;
-    p.socket.data.color = colors[i];
-    if (p.socket.data.clientId) sessions.set(p.socket.data.clientId, id);
-    p.socket.emit('match_found', {
+  roster.forEach((participant, i) => {
+    const socket = participant.socket;
+    if (!socket?.connected || seats[i].isBot) return;
+    socket.join(id);
+    socket.data.roomId = id;
+    socket.data.color = colors[i];
+    if (socket.data.clientId) sessions.set(socket.data.clientId, id);
+    if (tournamentMatch) {
+      socket.data.tournamentId = tournamentMatch.tournamentId;
+      socket.data.tournamentSlot = participant.slot;
+      const clientId = String(socket.data.clientId || '');
+      if (clientId) {
+        tournamentByClientId.set(clientId, {
+          tournamentId: tournamentMatch.tournamentId,
+          slot: participant.slot,
+        });
+      }
+    }
+    socket.emit('match_found', {
       roomId: id,
       yourColor: colors[i],
-      requestId: p.matchmakingId || undefined,
+      requestId: tournamentMatch && tournamentMatch.roundNo > 1
+        ? undefined
+        : participant.matchmakingId || undefined,
+      tournament: tournamentMatch ? {
+        id: tournamentMatch.tournamentId,
+        round: tournamentMatch.roundNo,
+        match: tournamentMatch.matchNo,
+      } : undefined,
       wager: wager ? {
         bet: wager.bet,
         feePerPlayer: wager.feePerPlayer,
@@ -852,9 +938,349 @@ function createRoom(io, players, {
   return room;
 }
 
+const TOURNAMENT_ROUND_NAMES = {
+  1: 'Quarter-Finals',
+  2: 'Semi-Finals',
+  3: 'Final',
+};
+
+function emitTournamentUpdate(runtime, {
+  status, message, roundNo = runtime.currentRound, matchNo = null, onlySlots = null, payout = null,
+} = {}) {
+  for (const participant of runtime.participants) {
+    if (participant.isBot || !participant.socket?.connected) continue;
+    if (onlySlots && !onlySlots.includes(participant.slot)) continue;
+    participant.socket.emit('tournament_update', {
+      tournamentId: runtime.id,
+      status,
+      round: roundNo,
+      match: matchNo,
+      participantStatus: participant.status,
+      championName: runtime.championName || null,
+      payout,
+      message: typeof message === 'function' ? message(participant) : message,
+    });
+  }
+}
+
+function activeTournamentParticipant(socket) {
+  const clientId = String(socket.data.clientId || '');
+  const reference = clientId ? tournamentByClientId.get(clientId) : null;
+  const runtime = reference && tournaments.get(reference.tournamentId);
+  return runtime?.status === 'IN_PROGRESS'
+    ? runtime.participants.find((participant) =>
+      participant.slot === reference.slot
+      && ['WAITING', 'IN_PROGRESS'].includes(participant.status)
+    ) || null
+    : null;
+}
+
+async function launchTournamentRound(io, runtime, roundNo, roundMatches) {
+  runtime.currentRound = roundNo;
+  const results = await Promise.allSettled(roundMatches.map(async (match) => {
+    const key = `${roundNo}:${match.match_no}`;
+    if (runtime.matches.has(key)) return false;
+    const tournamentMatch = await startTournamentMatch(runtime.id, roundNo, match.match_no);
+    if (!tournamentMatch) return false;
+    const participants = [
+      runtime.participants.find((participant) => participant.slot === tournamentMatch.player1Slot),
+      runtime.participants.find((participant) => participant.slot === tournamentMatch.player2Slot),
+    ];
+    if (participants.some((participant) => !participant)) {
+      throw new TournamentError('A tournament match participant could not be found.');
+    }
+
+    participants.forEach((participant) => { participant.status = 'IN_PROGRESS'; });
+    const livePlayers = participants.filter((participant) =>
+      !participant.isBot && participant.socket?.connected
+    );
+    runtime.matches.set(key, { status: 'IN_PROGRESS' });
+    try {
+      createRoom(io, livePlayers, {
+        mode: 2,
+        tokensToWin: 1,
+        tournamentParticipants: participants,
+        tournamentMatch: {
+          tournamentId: runtime.id,
+          roundNo,
+          matchNo: match.match_no,
+        },
+      });
+    } catch (error) {
+      runtime.matches.delete(key);
+      throw error;
+    }
+    return true;
+  }));
+  const failure = results.find((result) => result.status === 'rejected');
+  if (failure) throw failure.reason;
+  const started = results.map((result) => result.value);
+  if (started.some(Boolean)) {
+    emitTournamentUpdate(runtime, {
+      status: 'ROUND_STARTED',
+      roundNo,
+      message: (participant) => participant.status === 'ELIMINATED'
+        ? 'You were eliminated from the tournament.'
+        : `${TOURNAMENT_ROUND_NAMES[roundNo]} have started.`,
+    });
+  }
+}
+
+async function beginTournament(io, queuedPlayers) {
+  const humans = queuedPlayers.filter((player) => player.socket.connected);
+  if (humans.length === 0) return;
+
+  const usedNames = new Set(humans.map((player) => player.name.toLocaleLowerCase()));
+  humans.forEach((player) => {
+    botNamesByClientId.get(player.socket.data.clientId)?.forEach((name) =>
+      usedNames.add(name.toLowerCase())
+    );
+  });
+  const participants = buildParticipants(humans, (level) => ({
+    name: pickBotName(usedNames, level),
+  }));
+  const id = randomUUID();
+  const tournament = await createTournament({
+    id,
+    entryFee: humans[0].bet,
+    participants,
+  });
+  const runtime = {
+    id,
+    entryFee: tournament.entryFee,
+    humanCount: tournament.humanCount,
+    participants: participants.map((participant) => ({ ...participant, status: 'WAITING' })),
+    currentRound: 1,
+    status: 'IN_PROGRESS',
+    matches: new Map(),
+    startedAt: Date.now(),
+    championName: null,
+  };
+  tournaments.set(id, runtime);
+  for (const participant of runtime.participants) {
+    if (participant.isBot) continue;
+    const clientId = String(participant.socket?.data.clientId || '');
+    if (!clientId) continue;
+    tournamentByClientId.set(clientId, { tournamentId: id, slot: participant.slot });
+    participant.socket.data.tournamentId = id;
+    participant.socket.data.tournamentSlot = participant.slot;
+  }
+
+  const matches = createRoundPairs(1, runtime.participants.map((participant) => participant.slot))
+    .map(([player1Slot, player2Slot], index) => ({
+      round_no: 1,
+      match_no: index + 1,
+      player1_slot: player1Slot,
+      player2_slot: player2Slot,
+    }));
+  try {
+    await launchTournamentRound(io, runtime, 1, matches);
+  } catch (error) {
+    console.error(`Could not start tournament ${id}:`, error);
+    try {
+      await abortTournamentRuntime(
+        io,
+        runtime,
+        'Tournament could not start. Entry fees are being refunded.'
+      );
+    } catch (refundError) {
+      console.error(`Could not refund tournament ${id}:`, refundError);
+    }
+    throw new TournamentError('The tournament could not start. Please try again.');
+  }
+}
+
+async function finishTournamentMatch(io, room, storeResult) {
+  const runtime = tournaments.get(room.tournamentMatch.tournamentId);
+  if (!runtime) return;
+  const winnerSeat = seatOf(room, room.game.winner);
+  if (!winnerSeat) throw new TournamentError('The tournament match winner could not be found.');
+  const winner = runtime.participants.find((participant) =>
+    participant.slot === winnerSeat.tournamentSlot
+  );
+  if (!winner) throw new TournamentError('The tournament winner could not be found.');
+  winner.status = 'WAITING';
+  const matchParticipants = room.seats.map((seat) => seat.tournamentSlot);
+  const loser = runtime.participants.find((participant) =>
+    matchParticipants.includes(participant.slot) && participant.slot !== winner.slot
+  );
+  if (loser) loser.status = 'ELIMINATED';
+
+  runtime.matches.set(`${room.tournamentMatch.roundNo}:${room.tournamentMatch.matchNo}`, {
+    status: 'COMPLETED',
+    winnerSlot: winner.slot,
+  });
+
+  if (storeResult.status === 'WAITING') {
+    emitTournamentUpdate(runtime, {
+      status: 'WAITING',
+      roundNo: room.tournamentMatch.roundNo,
+      matchNo: room.tournamentMatch.matchNo,
+      onlySlots: matchParticipants,
+      message: (participant) => participant.slot === winner.slot
+        ? `You qualified and are waiting for all ${TOURNAMENT_ROUND_NAMES[room.tournamentMatch.roundNo].toLowerCase()} matches to finish.`
+        : 'You were eliminated from the tournament.',
+    });
+    return;
+  }
+
+  if (storeResult.status === 'ROUND_READY') {
+    runtime.currentRound = storeResult.roundNo;
+    const nextSlots = storeResult.matches.flatMap((match) => [
+      match.player1_slot,
+      match.player2_slot,
+    ]);
+    for (const participant of runtime.participants) {
+      if (nextSlots.includes(participant.slot)) participant.status = 'WAITING';
+    }
+    emitTournamentUpdate(runtime, {
+      status: 'ROUND_READY',
+      roundNo: storeResult.roundNo,
+      message: (participant) => participant.status === 'ELIMINATED'
+        ? 'You were eliminated from the tournament.'
+        : `All ${TOURNAMENT_ROUND_NAMES[room.tournamentMatch.roundNo].toLowerCase()} are complete. ${TOURNAMENT_ROUND_NAMES[storeResult.roundNo]} are next.`,
+    });
+    await launchTournamentRound(io, runtime, storeResult.roundNo, storeResult.matches);
+    return;
+  }
+
+  if (storeResult.status === 'COMPLETED') {
+    runtime.status = 'COMPLETED';
+    runtime.championName = storeResult.championName;
+    const champion = runtime.participants.find((participant) =>
+      participant.slot === storeResult.championSlot
+    );
+    if (champion) champion.status = 'CHAMPION';
+    for (const participant of runtime.participants) {
+      if (participant.status !== 'CHAMPION') participant.status = 'ELIMINATED';
+    }
+    emitTournamentUpdate(runtime, {
+      status: 'COMPLETED',
+      roundNo: 3,
+      onlySlots: runtime.participants.filter((participant) => !participant.isBot)
+        .map((participant) => participant.slot),
+      payout: storeResult.payout,
+      message: storeResult.championIsBot
+        ? `${storeResult.championName} won the tournament.`
+        : `${storeResult.championName} is the tournament champion and wins ${storeResult.payout} credits.`,
+    });
+    for (const participant of runtime.participants) {
+      if (participant.isBot) continue;
+      const clientId = String(participant.socket?.data.clientId || '');
+      if (clientId && tournamentByClientId.get(clientId)?.tournamentId === runtime.id) {
+        tournamentByClientId.delete(clientId);
+      }
+      if (participant.socket?.data.tournamentId === runtime.id) {
+        participant.socket.data.tournamentId = null;
+        participant.socket.data.tournamentSlot = null;
+      }
+    }
+  }
+}
+
+async function abortTournamentRuntime(io, runtime, message) {
+  const cancelled = await cancelTournament(runtime.id, message);
+  if (!cancelled) return false;
+  runtime.status = 'CANCELLED';
+  for (const room of [...rooms.values()]) {
+    if (room.tournamentMatch?.tournamentId !== runtime.id) continue;
+    room.finishing = true;
+    room.phase = 'over';
+    clearTimeout(room.timer);
+    broadcast(io, room);
+    io.to(room.id).emit('game_over', { winner: null, cancelled: true, wager: null });
+    destroyRoom(io, room);
+  }
+  for (const participant of runtime.participants) {
+    if (participant.isBot) continue;
+    const clientId = String(participant.socket?.data.clientId || '');
+    if (clientId && tournamentByClientId.get(clientId)?.tournamentId === runtime.id) {
+      tournamentByClientId.delete(clientId);
+    }
+    if (participant.socket?.data.tournamentId === runtime.id) {
+      participant.socket.data.tournamentId = null;
+      participant.socket.data.tournamentSlot = null;
+    }
+    participant.status = 'ELIMINATED';
+  }
+  emitTournamentUpdate(runtime, {
+    status: 'CANCELLED',
+    roundNo: runtime.currentRound,
+    onlySlots: runtime.participants.filter((participant) => !participant.isBot)
+      .map((participant) => participant.slot),
+    message,
+  });
+  return true;
+}
+
+function checkTournamentQueue(io) {
+  const queueType = 'tournament';
+  const queue = queues[queueType];
+  if (processingQueues.has(queueType)) return;
+
+  for (let index = queue.length - 1; index >= 0; index -= 1) {
+    if (queue[index].socket.connected) continue;
+    queue.splice(index, 1);
+  }
+
+  const groups = new Map();
+  queue.forEach((player) => {
+    const key = String(player.bet);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(player);
+  });
+  const readyGroup = [...groups.values()]
+    .sort((left, right) => left[0].queuedAt - right[0].queuedAt)
+    .find((group) => (
+      group.length >= 7
+      || Date.now() - group[0].queuedAt >= QUEUE_WAIT_MS.tournament
+    ));
+
+  if (readyGroup) {
+    const entrants = readyGroup.slice(0, 7);
+    const selected = new Set(entrants);
+    queues[queueType] = queue.filter((player) => !selected.has(player));
+    processingQueues.add(queueType);
+    beginTournament(io, entrants)
+      .catch((error) => {
+        if (!(error instanceof TournamentError)) {
+          console.error('Could not create tournament:', error);
+        }
+        entrants.forEach((player) => player.socket.emit('match_error',
+          error instanceof TournamentError
+            ? error.message
+            : 'Could not start the tournament. Please try again.'
+        ));
+      })
+      .finally(() => {
+        processingQueues.delete(queueType);
+        checkTournamentQueue(io);
+      });
+    return;
+  }
+
+  if (queue.length === 0) {
+    clearTimeout(queueTimers[queueType]);
+    queueTimers[queueType] = null;
+    return;
+  }
+  const remainingWait = Math.min(...queue.map((player) =>
+    QUEUE_WAIT_MS.tournament - (Date.now() - player.queuedAt)
+  ));
+  clearTimeout(queueTimers[queueType]);
+  queueTimers[queueType] = setTimeout(() => {
+    queueTimers[queueType] = null;
+    checkTournamentQueue(io);
+  }, Math.max(1, remainingWait));
+}
+
 function checkQueue(io, queueType) {
+  if (queueType === 'tournament') {
+    checkTournamentQueue(io);
+    return;
+  }
   const q = queues[queueType];
-  const tokensToWin = queueType === 'tournament' ? 1 : 4;
+  const tokensToWin = 4;
   if (processingQueues.has(queueType)) return;
 
   let pair;
@@ -1078,10 +1504,33 @@ function restoreSeatControl(seat, socket) {
 
 function resumeGame(io, socket) {
   const clientId = socket.data.clientId;
+  const tournamentRef = clientId && tournamentByClientId.get(String(clientId));
+  const tournamentRuntime = tournamentRef && tournaments.get(tournamentRef.tournamentId);
+  const tournamentParticipant = tournamentRuntime?.participants.find((participant) =>
+    participant.slot === tournamentRef.slot
+  );
+  if (tournamentParticipant) {
+    tournamentParticipant.socket = socket;
+    socket.data.tournamentId = tournamentRuntime.id;
+    socket.data.tournamentSlot = tournamentParticipant.slot;
+  }
   const roomId = clientId && sessions.get(clientId);
   const room = roomId && rooms.get(roomId);
   const seat = room && room.seats.find((s) => s.clientId === clientId);
   if (!seat) {
+    if (tournamentRuntime && tournamentParticipant) {
+      emitTournamentUpdate(tournamentRuntime, {
+        status: tournamentParticipant.status,
+        roundNo: tournamentRuntime.currentRound,
+        onlySlots: [tournamentParticipant.slot],
+        message: tournamentParticipant.status === 'WAITING'
+          ? `You qualified and are waiting for ${TOURNAMENT_ROUND_NAMES[tournamentRuntime.currentRound]?.toLowerCase() || 'the next round'}.`
+          : tournamentParticipant.status === 'ELIMINATED'
+            ? 'You have been eliminated from the tournament.'
+            : 'Your tournament match is being prepared.',
+      });
+      return;
+    }
     socket.emit('no_game');
     return;
   }
@@ -1139,10 +1588,23 @@ function registerHandlers(io, socket) {
       socket.emit('match_error', 'Choose a valid bet from 300 to 5,000 credits.');
       return;
     }
+    if (activeTournamentParticipant(socket)) {
+      socket.emit('match_error', 'Finish your current tournament match before joining another game.');
+      return;
+    }
     leaveLobby(io, socket);
     removeFromQueues(io, socket);
     const matchmakingId = String(requestId || '').slice(0, 80);
     const type = queueType === 'tournament' ? 'tournament' : 'normal';
+    if (
+      type === 'tournament'
+      && (
+        queues.tournament.some((player) => String(player.playerId) === String(socket.data.playerId))
+      )
+    ) {
+      socket.emit('match_error', 'You are already queued for or playing in a tournament.');
+      return;
+    }
     queues[type].push({
       socket,
       name: cleanName(name),
@@ -1153,7 +1615,12 @@ function registerHandlers(io, socket) {
       queueType: type,
       queuedAt: Date.now(),
     });
-    socket.emit('queued', { mode: 2, waitMs: QUEUE_WAIT_MS[type], requestId: matchmakingId });
+    socket.emit('queued', {
+      mode: 2,
+      waitMs: QUEUE_WAIT_MS[type],
+      requestId: matchmakingId,
+      queueType: type,
+    });
     checkQueue(io, type);
   });
 
@@ -1165,7 +1632,7 @@ function registerHandlers(io, socket) {
       s.socketId === socket.id && s.matchmakingId === matchmakingId
     );
     if (seat) {
-      if (room.match) forfeitGame(io, room, seat, socket);
+      if (room.match || room.tournamentMatch) forfeitGame(io, room, seat, socket);
       else replaceWithBot(io, socket);
     }
   });
@@ -1176,6 +1643,9 @@ function registerHandlers(io, socket) {
     if (socket.data.roomId) return;
     if (!hasActivePlayerSession(socket)) {
       return socket.emit('lobby_error', 'Sign in again as a Player to create a wagered table.');
+    }
+    if (activeTournamentParticipant(socket)) {
+      return socket.emit('lobby_error', 'Finish your current tournament match before creating another table.');
     }
     const playerCount = Number(mode);
     if (!MODE_COLORS[playerCount]) {
@@ -1202,6 +1672,9 @@ function registerHandlers(io, socket) {
     if (socket.data.roomId) return;
     if (!hasActivePlayerSession(socket)) {
       return socket.emit('lobby_error', 'Sign in again as a Player to join a wagered table.');
+    }
+    if (activeTournamentParticipant(socket)) {
+      return socket.emit('lobby_error', 'Finish your current tournament match before joining another table.');
     }
     const roomCode = String(code || '').trim().toUpperCase();
     const lobby = lobbies.get(roomCode);
@@ -1352,6 +1825,13 @@ function registerHandlers(io, socket) {
   socket.on('disconnect', () => {
     leaveLobby(io, socket);
     removeFromQueues(io, socket);
+    const clientId = String(socket.data.clientId || '');
+    const tournamentRef = clientId ? tournamentByClientId.get(clientId) : null;
+    const tournamentRuntime = tournamentRef && tournaments.get(tournamentRef.tournamentId);
+    const participant = tournamentRuntime?.participants.find((candidate) =>
+      candidate.slot === tournamentRef.slot
+    );
+    if (participant?.socket === socket) participant.socket = null;
     const room = rooms.get(socket.data.roomId);
     if (!room) return;
     takeOverDisconnectedSeat(io, room, socket);
