@@ -975,6 +975,11 @@ function activeTournamentParticipant(socket) {
     : null;
 }
 
+function isTournamentGroupReady(group, now = Date.now()) {
+  return group.length >= 2
+    || now - group[0].queuedAt >= QUEUE_WAIT_MS.tournament;
+}
+
 async function launchTournamentRound(io, runtime, roundNo, roundMatches) {
   runtime.currentRound = roundNo;
   const results = await Promise.allSettled(roundMatches.map(async (match) => {
@@ -1231,10 +1236,7 @@ function checkTournamentQueue(io) {
   });
   const readyGroup = [...groups.values()]
     .sort((left, right) => left[0].queuedAt - right[0].queuedAt)
-    .find((group) => (
-      group.length >= 7
-      || Date.now() - group[0].queuedAt >= QUEUE_WAIT_MS.tournament
-    ));
+    .find((group) => isTournamentGroupReady(group));
 
   if (readyGroup) {
     const entrants = readyGroup.slice(0, 7);
@@ -1842,4 +1844,5 @@ module.exports = {
   registerHandlers, autoAct, publicState, pickBotName, forfeitGame,
   rollDiceForCurrentPlayer, takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE,
   pickBotLevel, canStartPrivateRoom, isPrivateRoomStarted, createRoom, advanceTurn,
+  isTournamentGroupReady,
 };
