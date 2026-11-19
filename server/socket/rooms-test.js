@@ -5,6 +5,7 @@ const {
   registerHandlers, autoAct, publicState, pickBotName, forfeitGame, rollDiceForCurrentPlayer,
   takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE, pickBotLevel,
   canStartPrivateRoom, isPrivateRoomStarted, createRoom, advanceTurn,
+  isTournamentGroupReady,
 } = require('./rooms');
 
 function makeLobbyTestSocket(id, io) {
@@ -137,6 +138,13 @@ assert.deepStrictEqual(botTournamentRoom.seats.map((seat) => seat.isBot), [true,
 assert.strictEqual(botTournamentRoom.game.tokensToWin, 1);
 clearTimeout(botTournamentRoom.timer);
 console.log('PASS: tournament rooms support human-vs-bot and bot-vs-bot 1v1 matches');
+assert.strictEqual(isTournamentGroupReady([
+  { masterId: 'master-a', queuedAt: 1000 },
+  { masterId: 'master-b', queuedAt: 2000 },
+], 2000), true, 'same-bet tournament players from different masters should start together');
+assert.strictEqual(isTournamentGroupReady([{ queuedAt: 1000 }], 2000), false);
+assert.strictEqual(isTournamentGroupReady([{ queuedAt: 1000 }], 21000), true);
+console.log('PASS: tournament starts as soon as two same-bet players queue, across masters');
 
 assert.strictEqual(canStartPrivateRoom(2, 1), false, '2-player tables require both human players');
 assert.strictEqual(canStartPrivateRoom(2, 2), true, '2-player tables start when full');
