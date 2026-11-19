@@ -13,7 +13,7 @@ export default function MatchmakingScreen({ secondsLeft, onCancel, queueType = '
         <h2 id="matchmaking-title">{isTournament ? 'Building tournament bracket' : 'Finding players'}</h2>
         <p id="matchmaking-countdown">
           {isTournament
-            ? `Waiting for up to 7 players; bots fill open seats · ${secondsLeft}s`
+            ? `Waiting for players to join · ${secondsLeft}s`
             : `Searching for an opponent · ${secondsLeft}s`}
         </p>
         <button type="button" className="matchmaking-cancel" onClick={onCancel}>Cancel</button>
