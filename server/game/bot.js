@@ -28,16 +28,16 @@ const LEVEL_STRENGTH = {
 
 const QUICK_LEVEL_STRENGTH = {
   expert: 1,
-  hard: 0.73,
-  medium: 0.47,
+  hard: 0.85,
+  medium: 0.70,
   easy: 0.23,
   takeover: 0.10,
 };
 
 const NORMAL_LEVEL_STRENGTH = {
   expert: 1,
-  hard: 0.60,
-  medium: 0.41,
+  hard: 0.85,
+  medium: 0.70,
   easy: 0.25,
   takeover: 0.10,
 };

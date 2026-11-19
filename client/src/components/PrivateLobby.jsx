@@ -550,6 +550,7 @@ export default function PrivateLobby({
   const colors = SEAT_COLORS[lobby.mode] || SEAT_COLORS[4];
   const filled = lobby.players.length;
   const remaining = lobby.mode - filled;
+  const canStart = remaining === 0 || (lobby.mode === 4 && filled >= 2);
 
   const { url, message } = useMemo(
     () => extractShareData(whatsappLink, shareLink, lobby.code),
@@ -731,15 +732,15 @@ export default function PrivateLobby({
 
         {chatEnabled && <p className="pl-hint">Tap your avatar to chat 💬</p>}
 
-        {isHost ? remaining === 0 && (
-          <button
-            type="button"
-            className="pl-start"
-            onClick={onStart}
-          >
+        {lobby.mode === 4 && filled >= 2 && remaining > 0 && (
+          <p className="pl-hint">Empty seats will remain vacant.</p>
+        )}
+
+        {isHost ? canStart ? (
+          <button type="button" className="pl-start" onClick={onStart}>
             START GAME
           </button>
-        ) : (
+        ) : null : (
           <p className="pl-hint">Waiting for the host to start…</p>
         )}
 

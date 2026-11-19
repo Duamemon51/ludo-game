@@ -48,6 +48,8 @@ export default function PlayerProfile({
         {chatEnabled && isMe && <span className="chat-badge">💬</span>}
       </button>
 
+      {seat.isLeft && <span className="left-status" aria-label={`${seat.name} has left`}>LEFT</span>}
+
       <div className={`pname${isMe ? ' player-name-you' : ''}`} title={isMe ? undefined : seat.name}>
         {isMe ? 'You' : seat.name}
       </div>

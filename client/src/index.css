@@ -200,6 +200,22 @@ button { touch-action: manipulation; font-family: inherit; }
   flex: 0 0 56px;
 }
 .panel.right .player-profile { align-items: flex-end; }
+.left-status {
+  position: absolute;
+  top: 41px;
+  left: 50%;
+  z-index: 5;
+  transform: translateX(-50%);
+  padding: 2px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 999px;
+  background: #991b1b;
+  color: #fff;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+}
 .auto-mode-control {
   position: absolute;
   top: auto;

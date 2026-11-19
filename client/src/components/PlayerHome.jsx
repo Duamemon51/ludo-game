@@ -237,13 +237,13 @@ export default function PlayerHome({
   const feePercent = Number(tournament.feePercent ?? 10);
   const roundCredits = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
   const feePerPlayer = roundCredits((bet * feePercent) / 100);
-  const matchPlatformFee = roundCredits(feePerPlayer * 2);
+  const matchPlatformFee = feePerPlayer;
   const matchPayout = roundCredits((bet * 2) - matchPlatformFee);
   const tournamentPot = Number.isSafeInteger(tournamentBetAmount) && tournamentBetAmount >= 0
     ? tournamentBetAmount * 2
     : 0;
   const tournamentFeePerPlayer = roundCredits((tournamentBetAmount * feePercent) / 100);
-  const tournamentFee = roundCredits(tournamentFeePerPlayer * 2);
+  const tournamentFee = tournamentFeePerPlayer;
   const tournamentPayout = roundCredits(tournamentPot - tournamentFee);
   const validTournamentBet = TOURNAMENT_BETS.includes(tournamentBetAmount)
     && tournamentBetAmount <= availableBalance;
@@ -371,6 +371,10 @@ export default function PlayerHome({
 
   const submitWalletRequest = async (event) => {
     event.preventDefault();
+    if (walletRequestType === 'withdrawal' && Number(withdrawAmount) < 2000) {
+      setMessage('Minimum withdrawal amount is 2000 credits.');
+      return;
+    }
     setRequestingWalletRequest(true);
     setMessage('');
     try {
@@ -1131,7 +1135,7 @@ export default function PlayerHome({
           {page === 'match' && (
             <section className="ph-panel">
               <PanelHead className="ph-close-only" title="Choose your bet" onBack={() => setPage('home')} closeOnly />
-              <p>Minimum bet is 300. The platform receives {feePercent}% of each player’s bet.</p>
+              <p>Minimum bet is 300. The platform fee is {feePercent}% of the winner’s bet.</p>
               <div className="ph-bet-selector" role="group" aria-label="Bet amount">
                 <button
                   type="button"
@@ -1227,7 +1231,7 @@ export default function PlayerHome({
                   </div>
                   <div className="ph-prize-summary" aria-live="polite">
                     <div><span>Total pot</span><strong>{tournamentPot.toLocaleString()}</strong></div>
-                    <div><span>Platform fee ({feePercent}% each)</span><strong>{tournamentFee.toLocaleString()}</strong></div>
+                    <div><span>Platform fee ({feePercent}% of bet)</span><strong>{tournamentFee.toLocaleString()}</strong></div>
                     <div className="ph-prize-winner"><span>Winner gets</span><strong>{tournamentPayout.toLocaleString()}</strong></div>
                   </div>
                   <button
@@ -1255,7 +1259,7 @@ export default function PlayerHome({
               </div>
               <div className="ph-actions2">
                 <button type="button" className="ph-primary" disabled={loading || !active} onClick={() => openWalletRequest('deposit')}><Icon>{ICON_DOWN}</Icon>Deposit</button>
-                <button type="button" className="ph-primary" disabled={loading || !active || availableBalance <= 0} onClick={() => openWalletRequest('withdrawal')}><Icon>{ICON_UP}</Icon>Withdraw</button>
+                <button type="button" className="ph-primary" disabled={loading || !active || availableBalance < 2000} onClick={() => openWalletRequest('withdrawal')}><Icon>{ICON_UP}</Icon>Withdraw</button>
               </div>
               <p className="ph-hint">Deposits are approved by your Master. Pending withdrawals are held from your available balance.</p>
               {!active && <div className="ph-lock">Inactive accounts cannot request a withdrawal.</div>}
@@ -1469,10 +1473,10 @@ export default function PlayerHome({
           <form className="ph-modal" onSubmit={submitWalletRequest}>
             <h2>Request {walletRequestType}</h2>
             <p>{walletRequestType === 'withdrawal'
-              ? `Available balance: ${availableBalance.toLocaleString()}`
+              ? `Minimum withdrawal: 2,000 credits · Available balance: ${availableBalance.toLocaleString()}`
               : 'Your Master will review this request and add funds to your wallet if approved.'}</p>
             <label htmlFor="wallet-request-amount">Amount</label>
-            <input id="wallet-request-amount" type="number" min="0.01" step="0.01" max={walletRequestType === 'withdrawal' ? availableBalance : undefined} required value={withdrawAmount} onChange={(event) => setWithdrawAmount(event.target.value)} />
+            <input id="wallet-request-amount" type="number" min={walletRequestType === 'withdrawal' ? '2000' : '0.01'} step="0.01" max={walletRequestType === 'withdrawal' ? availableBalance : undefined} required value={withdrawAmount} onChange={(event) => setWithdrawAmount(event.target.value)} />
             <div className="ph-modal-actions">
               <button className="ph-primary" type="submit" disabled={requestingWalletRequest}>{requestingWalletRequest ? 'Submitting…' : 'Submit request'}</button>
               <button type="button" className="ph-back" onClick={() => setWalletRequestOpen(false)}>Cancel</button>

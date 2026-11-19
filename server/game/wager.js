@@ -13,13 +13,11 @@ const roundCredits = (amount) => Math.round((amount + Number.EPSILON) * 100) / 1
 
 function calculateWager(bet, feePercent, botOpponent = false, playerCount = 2) {
   const feePerPlayer = roundCredits((bet * feePercent) / 100);
-  const chargedPlayers = botOpponent ? 1 : playerCount;
   const totalPlayers = botOpponent ? 2 : playerCount;
-  const totalFee = roundCredits(feePerPlayer * totalPlayers);
   return {
     feePerPlayer,
-    platformFee: roundCredits(feePerPlayer * chargedPlayers),
-    payout: roundCredits((bet * totalPlayers) - totalFee),
+    platformFee: feePerPlayer,
+    payout: roundCredits((bet * totalPlayers) - feePerPlayer),
   };
 }
 
@@ -79,12 +77,6 @@ async function createWageredMatch(
     if (accounts.some((account) => account.status !== 'ACTIVE' || account.master_status !== 'ACTIVE')) {
       throw new WagerError('All players must have active accounts to place a bet.');
     }
-    if (!botOpponent && accounts.some((account) =>
-      String(account.master_id) !== String(accounts[0].master_id)
-    )) {
-      throw new WagerError('Players must belong to the same Master to play for credits.');
-    }
-
     const [wallets] = await connection.execute(
       `SELECT account_id, balance FROM wallets
        WHERE account_id IN (${playerPlaceholders})

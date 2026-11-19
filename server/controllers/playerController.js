@@ -3,6 +3,7 @@ const { randomUUID } = require('node:crypto');
 const { pool, transaction } = require('../db/pool');
 
 const MAX_AMOUNT = 999999999999.99;
+const MIN_WITHDRAWAL = 2000;
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -75,6 +76,9 @@ async function createWalletRequest(req, res, next, forcedType) {
       throw new HttpError(400, 'Request amount must be greater than zero and within the supported limit.');
     }
     const value = Math.round(amount * 100) / 100;
+    if (type === 'withdrawal' && value < MIN_WITHDRAWAL) {
+      throw new HttpError(400, 'Minimum withdrawal amount is 2000 credits.');
+    }
     const requestId = randomUUID();
     const result = await transaction(async (connection) => {
       const [players] = await connection.execute(
@@ -222,9 +226,9 @@ async function getMatches(req, res, next) {
        JOIN matches m ON m.id = own.match_id
        LEFT JOIN match_players other ON other.match_id = m.id AND other.player_id <> own.player_id
        LEFT JOIN accounts opponent ON opponent.id = other.player_id
-       WHERE own.player_id = ? AND m.master_id = ?
+       WHERE own.player_id = ?
        GROUP BY m.id ORDER BY m.started_at DESC LIMIT 500`,
-      [player.id, player.master_id]
+      [player.id]
     );
     res.json(rows.map((match) => ({
       id: match.match_code,
