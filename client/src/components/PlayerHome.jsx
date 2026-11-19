@@ -1218,7 +1218,7 @@ export default function PlayerHome({
           {SHOW_TOURNAMENT_UI && page === 'tournaments' && (
             <section className="ph-panel ph-tournament-panel">
               <PanelHead className="ph-close-only" title="8-player Knockout" onBack={() => setPage('home')} closeOnly />
-              <p>Pay once to enter. Bots fill open seats; payout depends on the number of human entrants.</p>
+              <p>One-time entry. The champion wins the prize pool after platform fees.</p>
               {currentTournament && (
                 <div className="ph-tournament" aria-live="polite">
                   <h3>Your active tournament</h3>
