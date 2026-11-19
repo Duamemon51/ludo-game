@@ -155,11 +155,12 @@ async function getTournaments(req, res, next) {
     const values = Object.fromEntries(rows.map((row) => [row.setting_key, row.setting_value]));
     const [activeRows] = await pool.execute(
       `SELECT t.id, t.status, t.current_round, t.entry_fee, t.prize_pool, t.payout,
+        t.champion_slot,
         tp.slot, tp.status AS participant_status
        FROM tournaments t
        JOIN tournament_participants tp ON tp.tournament_id = t.id
-       WHERE tp.player_id = ? AND t.status = 'IN_PROGRESS'
-       ORDER BY t.created_at DESC LIMIT 1`,
+       WHERE tp.player_id = ? AND t.status IN ('IN_PROGRESS', 'COMPLETED')
+       ORDER BY (t.status = 'IN_PROGRESS') DESC, t.created_at DESC LIMIT 1`,
       [req.playerId]
     );
     let current = null;
@@ -167,6 +168,7 @@ async function getTournaments(req, res, next) {
       const active = activeRows[0];
       const [matches] = await pool.execute(
         `SELECT tm.round_no, tm.match_no, tm.status, tm.winner_slot,
+          tm.player1_slot, tm.player2_slot,
           p1.participant_name AS player1_name, p2.participant_name AS player2_name
          FROM tournament_matches tm
          JOIN tournament_participants p1
@@ -182,6 +184,7 @@ async function getTournaments(req, res, next) {
         currentRound: Number(active.current_round),
         participantSlot: Number(active.slot),
         participantStatus: active.participant_status,
+        championSlot: active.champion_slot == null ? null : Number(active.champion_slot),
         entryFee: Number(active.entry_fee),
         prizePool: Number(active.prize_pool),
         payout: Number(active.payout),
@@ -190,6 +193,7 @@ async function getTournaments(req, res, next) {
           match: Number(match.match_no),
           status: match.status,
           winnerSlot: match.winner_slot == null ? null : Number(match.winner_slot),
+          playerSlots: [Number(match.player1_slot), Number(match.player2_slot)],
           players: [match.player1_name, match.player2_name],
         })),
       };

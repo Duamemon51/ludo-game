@@ -5,7 +5,7 @@ const {
   registerHandlers, autoAct, publicState, pickBotName, forfeitGame, rollDiceForCurrentPlayer,
   takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE, pickBotLevel,
   canStartPrivateRoom, isPrivateRoomStarted, createRoom, advanceTurn,
-  isTournamentGroupReady, findReadyTournamentGroup,
+  isTournamentGroupReady, findReadyTournamentGroup, recordHardForcedCapture,
 } = require('./rooms');
 
 function makeLobbyTestSocket(id, io) {
@@ -136,6 +136,10 @@ const botTournamentRoom = createRoom(lobbyTestIo, [], {
 });
 assert.deepStrictEqual(botTournamentRoom.seats.map((seat) => seat.isBot), [true, true]);
 assert.strictEqual(botTournamentRoom.game.tokensToWin, 1);
+assert.ok(
+  botTournamentRoom.seats[0].forcedCaptureLimit === 1
+    || botTournamentRoom.seats[0].forcedCaptureLimit === 2
+);
 clearTimeout(botTournamentRoom.timer);
 console.log('PASS: tournament rooms support human-vs-bot and bot-vs-bot 1v1 matches');
 assert.strictEqual(isTournamentGroupReady([
@@ -328,6 +332,37 @@ try {
     game: captureGame,
     seats: [{ color: 'red', isBot: true, level: 'medium' }],
   }), 5, 'medium bot should not force a capture die when a human token is in range');
+
+  const hardCaptureSeat = {
+    color: 'red',
+    isBot: true,
+    level: 'hard',
+    forcedCaptureCount: 0,
+    forcedCaptureLimit: 2,
+  };
+  const hardCaptureRoom = {
+    game: captureGame,
+    seats: [hardCaptureSeat],
+    phase: 'roll',
+    rolledDice: [],
+  };
+  Math.random = () => 0.999;
+  assert.strictEqual(rollDiceForCurrentPlayer(hardCaptureRoom), 3);
+  assert.strictEqual(hardCaptureRoom.pendingForcedCaptureColor, 'red');
+  assert.strictEqual(recordHardForcedCapture(hardCaptureRoom, 'red', 1), true);
+  assert.strictEqual(hardCaptureSeat.forcedCaptureCount, 1);
+  assert.strictEqual(hardCaptureRoom.pendingForcedCaptureColor, null);
+  Math.random = () => 0.999;
+  assert.strictEqual(rollDiceForCurrentPlayer(hardCaptureRoom), 3);
+  assert.strictEqual(hardCaptureRoom.pendingForcedCaptureColor, 'red');
+  assert.strictEqual(recordHardForcedCapture(hardCaptureRoom, 'red', 1), true);
+  assert.strictEqual(hardCaptureSeat.forcedCaptureCount, 2);
+  Math.random = () => 0.999;
+  assert.notStrictEqual(
+    rollDiceForCurrentPlayer(hardCaptureRoom),
+    3,
+    'hard bot should not force more than two captures in a match'
+  );
 
   Math.random = () => HUMAN_SIX_CHANCE - 0.001;
   assert.strictEqual(rollDiceForCurrentPlayer({

@@ -9,7 +9,11 @@ const {
   createTournament,
   startTournamentMatch,
 } = require('../game/tournament-store');
-const { buildParticipants, createRoundPairs } = require('../game/tournament-bracket');
+const {
+  buildParticipants,
+  createBracketPreview,
+  createRoundPairs,
+} = require('../game/tournament-bracket');
 
 const MODE_COLORS = {
   2: ['red', 'yellow'],
@@ -17,6 +21,7 @@ const MODE_COLORS = {
 };
 const TURN_MS = 20000;
 const QUEUE_WAIT_MS = { normal: 15000, tournament: 20000 };
+const TOURNAMENT_PREVIEW_MS = 5000;
 const SKIP_MS = 1200;
 const MOVE_STEP_MS = 250;
 const MOVE_SETTLE_MS = 350;
@@ -157,6 +162,15 @@ function seatOf(room, color) {
   return room.seats.find((s) => s.color === color);
 }
 
+function recordHardForcedCapture(room, color, capturedCount) {
+  if (capturedCount < 1 || room.pendingForcedCaptureColor !== color) return false;
+  const seat = seatOf(room, color);
+  if (seat?.level !== 'hard') return false;
+  seat.forcedCaptureCount = (seat.forcedCaptureCount || 0) + 1;
+  room.pendingForcedCaptureColor = null;
+  return true;
+}
+
 function findCaptureDice(game, color, maxDice = 6) {
   let bestDice = null;
   let bestScore = -Infinity;
@@ -241,7 +255,13 @@ function rollDiceForCurrentPlayer(room) {
     ? 0
     : afterSix ? sixChance * 0.25 : sixChance;
 
-  if (seat.level !== 'medium') {
+  const canForceCapture = seat.level === 'expert'
+    || (
+      seat.level === 'hard'
+      && (seat.forcedCaptureCount || 0) < (seat.forcedCaptureLimit || 1)
+      && room.pendingForcedCaptureColor !== seat.color
+    );
+  if (canForceCapture) {
     const captureDice = findCaptureDice(
       room.game,
       seat.color,
@@ -251,7 +271,10 @@ function rollDiceForCurrentPlayer(room) {
         ? 5
         : 6
     );
-    if (captureDice !== null) return finishBotRoll(captureDice);
+    if (captureDice !== null) {
+      if (seat.level === 'hard') room.pendingForcedCaptureColor = seat.color;
+      return finishBotRoll(captureDice);
+    }
   }
 
   if (Math.random() < adjustedSixChance) return finishBotRoll(6);
@@ -364,6 +387,7 @@ function schedule(io, room) {
 }
 
 function startTurn(io, room) {
+  room.pendingForcedCaptureColor = null;
   room.phase = 'roll';
   room.dice = null;
   room.doubleRoll = false;
@@ -547,6 +571,7 @@ function doMove(io, room, tokenIdx, diceId) {
     Object.entries(room.game.tokens).map(([tokenColor, positions]) => [tokenColor, [...positions]])
   );
   const result = engine.applyMove(room.game, color, tokenIdx, dice);
+  recordHardForcedCapture(room, color, result.captured.length);
   room.lastMove = {
     id: (room.moveId = (room.moveId || 0) + 1),
     color,
@@ -878,6 +903,10 @@ function createRoom(io, players, {
       isBot,
       missed: 0,
       level: participant.level || (isBot ? 'takeover' : 'medium'),
+      forcedCaptureCount: 0,
+      forcedCaptureLimit: participant.level === 'hard'
+        ? (Math.random() < 0.5 ? 1 : 2)
+        : 0,
     };
   });
 
@@ -1096,6 +1125,14 @@ async function beginTournament(io, queuedPlayers) {
       player2_slot: player2Slot,
     }));
   try {
+    for (const participant of runtime.participants) {
+      if (participant.isBot || !participant.socket?.connected) continue;
+        participant.socket.emit(
+          'tournament_bracket',
+          createBracketPreview(runtime.participants, matches, participant.slot)
+        );
+    }
+    await new Promise((resolve) => setTimeout(resolve, TOURNAMENT_PREVIEW_MS));
     await launchTournamentRound(io, runtime, 1, matches);
   } catch (error) {
     console.error(`Could not start tournament ${id}:`, error);
@@ -1854,4 +1891,5 @@ module.exports = {
   rollDiceForCurrentPlayer, takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE,
   pickBotLevel, canStartPrivateRoom, isPrivateRoomStarted, createRoom, advanceTurn,
   isTournamentGroupReady, findReadyTournamentGroup,
+  recordHardForcedCapture,
 };

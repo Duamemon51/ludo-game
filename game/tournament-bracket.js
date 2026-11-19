@@ -49,6 +49,26 @@ function createRoundPairs(round, winners) {
   ]);
 }
 
+function createBracketPreview(participants, matches, yourSlot) {
+  const participantsBySlot = new Map(participants.map((participant) => [
+    participant.slot,
+    participant,
+  ]));
+  return {
+    yourSlot,
+    matches: matches.map((match) => ({
+      match: match.match_no,
+      players: [match.player1_slot, match.player2_slot].map((slot) => {
+        const participant = participantsBySlot.get(slot);
+        if (!participant) {
+          throw new RangeError(`Bracket match references unknown participant slot ${slot}.`);
+        }
+        return { slot, name: participant.name };
+      }),
+    })),
+  };
+}
+
 function nextRoundMatches(round, completedMatches) {
   if (!Array.isArray(completedMatches) || completedMatches.length !== (round === 1 ? 4 : round === 2 ? 2 : 1)) {
     return null;
@@ -77,6 +97,7 @@ module.exports = {
   TOURNAMENT_SIZE,
   allocateBotLevels,
   buildParticipants,
+  createBracketPreview,
   createRoundPairs,
   nextRoundMatches,
 };
