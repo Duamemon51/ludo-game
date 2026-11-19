@@ -18,6 +18,7 @@ const AUTO_MOVE_SINGLE = true; // auto-play when only one token can move
 const GAME_CHAT_ENABLED = false;
 const TURN_SECONDS = 20;
 const BUBBLE_MS = 4500;
+const RECONNECT_NOTICE_DELAY_MS = 3000;
 const RESULT_REVEAL_MS = 2600;
 const TOURNAMENT_ROUND_LABELS = {
   1: 'Quarter-final',
@@ -99,6 +100,7 @@ export default function App() {
     () => window.matchMedia(MOBILE_LAYOUT_QUERY).matches
   );
   const [connected, setConnected] = useState(socket.connected);
+  const [showReconnectOverlay, setShowReconnectOverlay] = useState(false);
   const [status, setStatus] = useState('idle'); // idle | queued | bracket | lobby | playing | finishing | over
   const [authSession, setAuthSession] = useState(readAuthSession);
   const [loginLoading, setLoginLoading] = useState(false);
@@ -139,6 +141,7 @@ export default function App() {
   const leaveRequestRef = useRef(false);
   const pendingOverRef = useRef(null);
   const noticeTimerRef = useRef(null);
+  const reconnectNoticeTimerRef = useRef(null);
   const statusRef = useRef(status);
   statusRef.current = status;
   const diceOptions = game?.diceOptions || (
@@ -251,7 +254,26 @@ export default function App() {
   };
 
   useEffect(() => {
+    const clearReconnectNotice = () => {
+      clearTimeout(reconnectNoticeTimerRef.current);
+      reconnectNoticeTimerRef.current = null;
+    };
+    const scheduleReconnectNotice = () => {
+      clearReconnectNotice();
+      if (document.visibilityState !== 'visible') return;
+      reconnectNoticeTimerRef.current = setTimeout(() => {
+        reconnectNoticeTimerRef.current = null;
+        if (
+          document.visibilityState === 'visible'
+          && ['playing', 'finishing', 'over', 'spectating'].includes(statusRef.current)
+        ) {
+          setShowReconnectOverlay(true);
+        }
+      }, RECONNECT_NOTICE_DELAY_MS);
+    };
     const onConnect = () => {
+      clearReconnectNotice();
+      setShowReconnectOverlay(false);
       setConnected(true);
       if (spectatorMatchRef.current) {
         socket.emit('watch_tournament_match', spectatorMatchRef.current);
@@ -260,16 +282,35 @@ export default function App() {
       }
     };
     const onDisconnect = () => {
+      setShowReconnectOverlay(false);
       setConnected(false); // keep the board on screen while reconnecting
+      scheduleReconnectNotice();
     };
-    const onOffline = () => setConnected(socket.connected);
+    const onOffline = () => {
+      setConnected(socket.connected);
+      if (!socket.connected) scheduleReconnectNotice();
+    };
     const onOnline = () => {
       setConnected(socket.connected);
-      if (!socket.connected) socket.connect();
+      if (!socket.connected) {
+        socket.connect();
+        scheduleReconnectNotice();
+      }
     };
     const onPageVisible = () => {
-      if (document.visibilityState !== 'visible') return;
-      if (!socket.connected) socket.connect();
+      if (document.visibilityState !== 'visible') {
+        clearReconnectNotice();
+        setShowReconnectOverlay(false);
+        return;
+      }
+      if (!socket.connected) {
+        socket.connect();
+        scheduleReconnectNotice();
+      } else {
+        clearReconnectNotice();
+        setShowReconnectOverlay(false);
+        setConnected(true);
+      }
     };
     const onNoGame = () => {
       if (statusRef.current === 'over' || statusRef.current === 'finishing') return;
@@ -475,6 +516,7 @@ export default function App() {
       if (GAME_CHAT_ENABLED) socket.off('chat_message', onChat);
       clearTimeout(resultTimerRef.current);
       clearTimeout(noticeTimerRef.current);
+      clearReconnectNotice();
     };
   }, []);
 
@@ -787,7 +829,7 @@ export default function App() {
       )}
 
       {!connected && !inGame && homeView !== 'master' && homeView !== 'login' && homeView !== 'menu' && <div className="card">Connecting to server...</div>}
-      {!connected && inGame && (
+      {!connected && inGame && showReconnectOverlay && (
         <div className="reconnect-overlay">
           <section className="reconnect-card" role="alertdialog" aria-modal="true" aria-labelledby="reconnect-title">
             <strong id="reconnect-title">Connection lost. Reconnecting…</strong>
