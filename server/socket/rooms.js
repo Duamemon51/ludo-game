@@ -27,7 +27,7 @@ const HUMAN_SIX_CHANCE = 0.20;
 const BOT_SIX_CHANCE = {
   expert: 0.65,
   hard: 0.5,
-  medium: 0.4,
+  medium: 0.3,
 };
 
 const BOT_NAMES_BY_LEVEL = {
@@ -241,18 +241,23 @@ function rollDiceForCurrentPlayer(room) {
     ? 0
     : afterSix ? sixChance * 0.25 : sixChance;
 
-  const captureDice = findCaptureDice(
-    room.game,
-    seat.color,
-    consecutiveSixes
-      || expertSixCooldown > 0
-      || hardMediumSixCooldown > 0
-      ? 5
-      : 6
-  );
-  if (captureDice !== null) return finishBotRoll(captureDice);
+  if (seat.level !== 'medium') {
+    const captureDice = findCaptureDice(
+      room.game,
+      seat.color,
+      consecutiveSixes
+        || expertSixCooldown > 0
+        || hardMediumSixCooldown > 0
+        ? 5
+        : 6
+    );
+    if (captureDice !== null) return finishBotRoll(captureDice);
+  }
 
   if (Math.random() < adjustedSixChance) return finishBotRoll(6);
+  if (seat.level === 'medium') {
+    return finishBotRoll(Math.floor(Math.random() * 5) + 1);
+  }
 
   const weights = [1, 2, 3, 4, 5].map((dice) => {
     const moves = engine.getValidMoves(room.game, seat.color, dice);
@@ -980,6 +985,18 @@ function isTournamentGroupReady(group, now = Date.now()) {
     || now - group[0].queuedAt >= QUEUE_WAIT_MS.tournament;
 }
 
+function findReadyTournamentGroup(queue, now = Date.now()) {
+  const groups = new Map();
+  queue.forEach((player) => {
+    const key = String(player.bet);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(player);
+  });
+  return [...groups.values()]
+    .sort((left, right) => left[0].queuedAt - right[0].queuedAt)
+    .find((group) => isTournamentGroupReady(group, now)) || null;
+}
+
 async function launchTournamentRound(io, runtime, roundNo, roundMatches) {
   runtime.currentRound = roundNo;
   const results = await Promise.allSettled(roundMatches.map(async (match) => {
@@ -1228,15 +1245,7 @@ function checkTournamentQueue(io) {
     queue.splice(index, 1);
   }
 
-  const groups = new Map();
-  queue.forEach((player) => {
-    const key = String(player.bet);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(player);
-  });
-  const readyGroup = [...groups.values()]
-    .sort((left, right) => left[0].queuedAt - right[0].queuedAt)
-    .find((group) => isTournamentGroupReady(group));
+  const readyGroup = findReadyTournamentGroup(queue);
 
   if (readyGroup) {
     const entrants = readyGroup.slice(0, 7);
@@ -1844,5 +1853,5 @@ module.exports = {
   registerHandlers, autoAct, publicState, pickBotName, forfeitGame,
   rollDiceForCurrentPlayer, takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE,
   pickBotLevel, canStartPrivateRoom, isPrivateRoomStarted, createRoom, advanceTurn,
-  isTournamentGroupReady,
+  isTournamentGroupReady, findReadyTournamentGroup,
 };

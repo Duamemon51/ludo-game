@@ -5,7 +5,7 @@ const {
   registerHandlers, autoAct, publicState, pickBotName, forfeitGame, rollDiceForCurrentPlayer,
   takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE, pickBotLevel,
   canStartPrivateRoom, isPrivateRoomStarted, createRoom, advanceTurn,
-  isTournamentGroupReady,
+  isTournamentGroupReady, findReadyTournamentGroup,
 } = require('./rooms');
 
 function makeLobbyTestSocket(id, io) {
@@ -144,7 +144,26 @@ assert.strictEqual(isTournamentGroupReady([
 ], 2000), true, 'same-bet tournament players from different masters should start together');
 assert.strictEqual(isTournamentGroupReady([{ queuedAt: 1000 }], 2000), false);
 assert.strictEqual(isTournamentGroupReady([{ queuedAt: 1000 }], 21000), true);
-console.log('PASS: tournament starts as soon as two same-bet players queue, across masters');
+const crossMasterTournamentQueue = [
+  { playerId: 'player-a', masterId: 'master-a', bet: 500, queuedAt: 1000 },
+  { playerId: 'player-b', masterId: 'master-b', bet: 500, queuedAt: 1100 },
+  { playerId: 'player-c', masterId: 'master-c', bet: 1000, queuedAt: 900 },
+];
+assert.deepStrictEqual(
+  findReadyTournamentGroup(crossMasterTournamentQueue, 1200)
+    .map((player) => player.playerId),
+  ['player-a', 'player-b'],
+  'same-bet players from different masters should be selected together'
+);
+assert.strictEqual(
+  findReadyTournamentGroup([
+    { playerId: 'player-a', bet: 500, queuedAt: 1000 },
+    { playerId: 'player-b', bet: 1000, queuedAt: 1000 },
+  ], 1200),
+  null,
+  'players with different bets should remain in separate tournament queues'
+);
+console.log('PASS: tournament auto-matches same-bet players across masters');
 
 assert.strictEqual(canStartPrivateRoom(2, 1), false, '2-player tables require both human players');
 assert.strictEqual(canStartPrivateRoom(2, 2), true, '2-player tables start when full');
@@ -197,7 +216,7 @@ try {
   for (const [level, sixThreshold] of [
     ['expert', 0.649],
     ['hard', 0.499],
-    ['medium', 0.399],
+    ['medium', 0.299],
   ]) {
     Math.random = () => sixThreshold;
     assert.strictEqual(rollDiceForCurrentPlayer({
@@ -224,11 +243,11 @@ try {
     seats: [{ color: 'red', isBot: true, level: 'hard' }],
   }), 6, 'hard six chance should be 50%, not 40%');
 
-  Math.random = () => 0.4;
+  Math.random = () => 0.3;
   assert.notStrictEqual(rollDiceForCurrentPlayer({
     game: engine.createGame(['red', 'yellow']),
     seats: [{ color: 'red', isBot: true, level: 'medium' }],
-  }), 6, 'medium six chance should be 40%, not 30%');
+  }), 6, 'medium six chance should be 30%');
 
   Math.random = () => 0.15;
   assert.strictEqual(rollDiceForCurrentPlayer({
@@ -303,6 +322,12 @@ try {
     game: captureGame,
     seats: [{ color: 'red', isBot: true, level: 'expert' }],
   }), 3, 'bot should guarantee the die value needed to capture');
+
+  Math.random = () => 0.999;
+  assert.strictEqual(rollDiceForCurrentPlayer({
+    game: captureGame,
+    seats: [{ color: 'red', isBot: true, level: 'medium' }],
+  }), 5, 'medium bot should not force a capture die when a human token is in range');
 
   Math.random = () => HUMAN_SIX_CHANCE - 0.001;
   assert.strictEqual(rollDiceForCurrentPlayer({
