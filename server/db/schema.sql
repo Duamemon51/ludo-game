@@ -155,10 +155,7 @@ CREATE TABLE IF NOT EXISTS tournaments (
   CONSTRAINT fk_tournaments_master FOREIGN KEY (master_id) REFERENCES accounts(id)
     ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT fk_tournaments_champion FOREIGN KEY (champion_id) REFERENCES accounts(id)
-    ON UPDATE CASCADE ON DELETE SET NULL,
-  CONSTRAINT chk_tournament_entry CHECK (entry_fee >= 0 AND platform_fee >= 0 AND prize_pool >= 0 AND payout >= 0),
-  CONSTRAINT chk_tournament_humans CHECK (human_count BETWEEN 1 AND 7),
-  CONSTRAINT chk_tournament_round CHECK (current_round BETWEEN 1 AND 3)
+    ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS tournament_participants (
@@ -175,12 +172,7 @@ CREATE TABLE IF NOT EXISTS tournament_participants (
   CONSTRAINT fk_tournament_participants_tournament FOREIGN KEY (tournament_id) REFERENCES tournaments(id)
     ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT fk_tournament_participants_player FOREIGN KEY (player_id) REFERENCES accounts(id)
-    ON UPDATE CASCADE ON DELETE RESTRICT,
-  CONSTRAINT chk_tournament_participant_slot CHECK (slot BETWEEN 1 AND 8),
-  CONSTRAINT chk_tournament_participant_kind CHECK (
-    (is_bot = 1 AND player_id IS NULL AND bot_level IS NOT NULL AND entry_paid = 0)
-    OR (is_bot = 0 AND player_id IS NOT NULL AND bot_level IS NULL AND entry_paid = 1)
-  )
+    ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS tournament_matches (
@@ -207,11 +199,7 @@ CREATE TABLE IF NOT EXISTS tournament_matches (
     ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT fk_tournament_matches_winner FOREIGN KEY (tournament_id, winner_slot)
     REFERENCES tournament_participants(tournament_id, slot)
-    ON UPDATE CASCADE ON DELETE RESTRICT,
-  CONSTRAINT chk_tournament_match_round CHECK (round_no BETWEEN 1 AND 3),
-  CONSTRAINT chk_tournament_match_slots CHECK (
-    player1_slot BETWEEN 1 AND 8 AND player2_slot BETWEEN 1 AND 8 AND player1_slot <> player2_slot
-  )
+    ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS platform_settings (

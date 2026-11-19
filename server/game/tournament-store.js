@@ -1,4 +1,5 @@
 const { transaction } = require('../db/pool');
+const { calculateWager } = require('./wager');
 const { createRoundPairs, nextRoundMatches } = require('./tournament-bracket');
 
 class TournamentError extends Error {
@@ -14,10 +15,20 @@ async function createTournament({ id, entryFee, participants }) {
   if (
     !Array.isArray(participants)
     || participants.length !== 8
+    || participants.some((participant) => !participant || typeof participant !== 'object')
     || participants.filter((participant) => !participant.isBot).length < 1
     || participants.filter((participant) => !participant.isBot).length > 7
     || participants.filter((participant) => participant.isBot && participant.level === 'expert').length !== 1
-    || participants.some((participant, index) => participant.slot !== index + 1)
+    || participants.some((participant, index) => (
+      participant.slot !== index + 1
+      || typeof participant.isBot !== 'boolean'
+      || typeof participant.name !== 'string'
+      || !participant.name.trim()
+      || participant.name.length > 50
+      || (participant.isBot
+        ? participant.playerId != null || !['expert', 'hard', 'medium'].includes(participant.level)
+        : !String(participant.playerId || '') || participant.level != null)
+    ))
   ) {
     throw new TournamentError('The tournament bracket is not valid.');
   }
@@ -102,8 +113,12 @@ async function createTournament({ id, entryFee, participants }) {
       }
     }
 
-    const platformFee = roundCredits((entryFee * feePercent) / 100);
-    const prizePool = roundCredits((entryFee * humanIds.length) - platformFee);
+    const { platformFee, payout: prizePool } = calculateWager(
+      entryFee,
+      feePercent,
+      false,
+      humanIds.length
+    );
     const masterId = accounts[0].master_id;
     await connection.execute(
       `INSERT INTO tournaments
