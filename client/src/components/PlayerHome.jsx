@@ -6,7 +6,7 @@ import PrivateTable from './PrivateTable';
 const PAWN_COLORS = ['#e53935', '#3fa34d', '#fcc419', '#1e88e5'];
 const TOURNAMENT = { id: 'quick-1v1', name: 'Quick 1 vs 1' };
 const TOURNAMENT_BETS = [300, 500, 1000, 2000, 3000, 4000, 5000];
-const SHOW_TOURNAMENT_UI = false;
+const SHOW_TOURNAMENT_UI = true;
 
 function Icon({ children }) {
   return (
@@ -145,7 +145,7 @@ export default function PlayerHome({
   const [profile, setProfile] = useState(null);
   const [wallet, setWallet] = useState({ balance: 0, heldAmount: 0, availableBalance: 0, ledger: [], requests: [] });
   const [matches, setMatches] = useState([]);
-  const [tournament, setTournament] = useState({ enabled: false, entryFee: 300, feePercent: 10, mode: 'Quick 1 vs 1' });
+  const [tournament, setTournament] = useState({ enabled: false, entryFee: 300, feePercent: 10, mode: '8-player knockout', current: null });
   const [loading, setLoading] = useState(true);
   const [requestingWalletRequest, setRequestingWalletRequest] = useState(false);
   const [walletRequestOpen, setWalletRequestOpen] = useState(false);
@@ -240,13 +240,26 @@ export default function PlayerHome({
   const matchPlatformFee = feePerPlayer;
   const matchPayout = roundCredits((bet * 2) - matchPlatformFee);
   const tournamentPot = Number.isSafeInteger(tournamentBetAmount) && tournamentBetAmount >= 0
-    ? tournamentBetAmount * 2
+    ? tournamentBetAmount * 7
     : 0;
   const tournamentFeePerPlayer = roundCredits((tournamentBetAmount * feePercent) / 100);
   const tournamentFee = tournamentFeePerPlayer;
-  const tournamentPayout = roundCredits(tournamentPot - tournamentFee);
+  const tournamentPayout = Math.max(0, roundCredits(tournamentPot - tournamentFee));
   const validTournamentBet = TOURNAMENT_BETS.includes(tournamentBetAmount)
     && tournamentBetAmount <= availableBalance;
+  const currentTournament = tournament.current;
+  const currentRoundMatches = currentTournament?.matches?.filter(
+    (match) => match.round === currentTournament.currentRound
+  ) || [];
+  const completedCurrentMatches = currentRoundMatches.filter((match) => match.status === 'COMPLETED').length;
+  const tournamentRoundName = ['Quarter-finals', 'Semi-finals', 'Final'][currentTournament?.currentRound - 1];
+  const currentTournamentMessage = currentTournament?.participantStatus === 'ELIMINATED'
+    ? 'You have been eliminated. The tournament is still in progress.'
+    : currentTournament?.participantStatus === 'WAITING'
+      ? currentRoundMatches.some((match) => match.status === 'IN_PROGRESS')
+        ? 'You qualified and are waiting for the remaining matches.'
+        : 'You qualified and are waiting for the next round to begin.'
+      : 'Your match is in progress.';
 
   const refreshPlayerData = useCallback(async () => {
     try {
@@ -279,6 +292,12 @@ export default function PlayerHome({
   useEffect(() => {
     const refreshTimer = window.setInterval(refreshPlayerData, 30000);
     return () => window.clearInterval(refreshTimer);
+  }, [refreshPlayerData]);
+
+  useEffect(() => {
+    const refreshOnGameResult = () => refreshPlayerData();
+    window.addEventListener('player:refresh', refreshOnGameResult);
+    return () => window.removeEventListener('player:refresh', refreshOnGameResult);
   }, [refreshPlayerData]);
 
   useEffect(() => {
@@ -729,7 +748,8 @@ export default function PlayerHome({
           .ph-bottom-nav button.ph-nav-home .ph-nav-orb svg { width: 32px; height: 32px; }
 
           /* home screen: compact hero + scrollable content so nothing hides behind the nav */
-          .ph-layout:not(.ph-layout-detail) { align-items: center; justify-content: center; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 110px; }
+          .ph-layout:not(.ph-layout-detail) { align-items: center; justify-content: center; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 110px; scrollbar-width: none; }
+          .ph-layout:not(.ph-layout-detail)::-webkit-scrollbar { display: none; }
           .ph-layout:not(.ph-layout-detail) > .ph-hero,
           .ph-layout:not(.ph-layout-detail) > .ph-sheet { width: min(100%, 460px); }
           .ph-layout:not(.ph-layout-detail) .ph-hero { flex: 0 0 auto; min-height: 0; padding-top: 2px; }
@@ -920,6 +940,8 @@ export default function PlayerHome({
         .ph-head h2 { flex: 1; min-width: 0; margin: 0; font-size: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .ph-close-only .ph-icon-btn { width: 32px; height: 32px; }
         .ph-close-only .ph-icon-btn svg { width: 16px; height: 16px; }
+        .ph-wallet-head > .ph-icon-btn { width: 32px; height: 32px; box-shadow: inset 0 1px 0 #fff, 0 2px 0 #c39729; }
+        .ph-wallet-head > .ph-icon-btn svg { width: 17px; height: 17px; }
         .ph-head-spacer { flex: none; width: 38px; }
         .ph-icon-btn { flex: none; display: grid; place-items: center; width: 38px; height: 38px; padding: 0; border: 1px solid #d5a928; border-radius: 50%; color: #55340b; background: linear-gradient(180deg, #fff8df, #f3dfa9); box-shadow: inset 0 1px 0 #fff, 0 3px 0 #c39729, 0 5px 9px #3b241225; }
         .ph-icon-btn:active { transform: translateY(2px); box-shadow: inset 0 1px 0 #fff, 0 1px 0 #c39729; }
@@ -1186,8 +1208,15 @@ export default function PlayerHome({
 
           {SHOW_TOURNAMENT_UI && page === 'tournaments' && (
             <section className="ph-panel ph-tournament-panel">
-              <PanelHead className="ph-close-only" title="Quick 1 vs 1" onBack={() => setPage('home')} closeOnly />
-              <p>Choose your entry amount to join a single 1 vs 1 match.</p>
+              <PanelHead className="ph-close-only" title="8-player Knockout" onBack={() => setPage('home')} closeOnly />
+              <p>Pay once to enter. Bots fill open seats; payout depends on the number of human entrants.</p>
+              {currentTournament && (
+                <div className="ph-tournament" aria-live="polite">
+                  <h3>Your active tournament</h3>
+                  <p>{tournamentRoundName} · {completedCurrentMatches}/{currentRoundMatches.length} matches complete</p>
+                  <p>{currentTournamentMessage}</p>
+                </div>
+              )}
               <div className="ph-grid">
                 <div className="ph-tournament-bet-content" key={TOURNAMENT.id}>
                   <span className="ph-tournament-label">Select your bet</span>
@@ -1227,12 +1256,12 @@ export default function PlayerHome({
                     </button>
                   </div>
                   <div className="ph-bet-hint">
-                    Choose a bet from 300 to 5,000 credits
+                    One-time entry · 300 to 5,000 credits
                   </div>
                   <div className="ph-prize-summary" aria-live="polite">
-                    <div><span>Total pot</span><strong>{tournamentPot.toLocaleString()}</strong></div>
-                    <div><span>Platform fee ({feePercent}% of bet)</span><strong>{tournamentFee.toLocaleString()}</strong></div>
-                    <div className="ph-prize-winner"><span>Winner gets</span><strong>{tournamentPayout.toLocaleString()}</strong></div>
+                    <div><span>Max prize pool</span><strong>{tournamentPot.toLocaleString()}</strong></div>
+                    <div><span>Platform fee ({feePercent}% of one entry)</span><strong>{tournamentFee.toLocaleString()}</strong></div>
+                    <div className="ph-prize-winner"><span>Max champion payout</span><strong>{tournamentPayout.toLocaleString()}</strong></div>
                   </div>
                   <button
                     type="button"
@@ -1251,7 +1280,7 @@ export default function PlayerHome({
 
           {page === 'wallet' && (
             <section className="ph-panel ph-panel-wallet">
-              <PanelHead title="Wallet" onBack={() => setPage('home')} action={{ label: 'Refresh', icon: ICON_REFRESH, onClick: refreshPlayerData }} />
+              <PanelHead className="ph-wallet-head" title="Wallet" onBack={() => setPage('home')} action={{ label: 'Refresh', icon: ICON_REFRESH, onClick: refreshPlayerData }} />
               <div className="ph-stats3">
                 <div className="ph-stat"><span>Balance</span><strong>{balance.toLocaleString()}</strong></div>
                 <div className="ph-stat"><span>On hold</span><strong>{wallet.heldAmount.toLocaleString()}</strong></div>

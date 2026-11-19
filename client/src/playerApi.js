@@ -1,7 +1,7 @@
 import { API_URL } from './adminApi';
 
 export const PLAYER_SERVER_UNAVAILABLE =
-  'Unable to reach the game server. Check your connection and try again.';
+  "We couldn't connect. Check your internet connection and try again.";
 
 export async function playerRequest(path, { token, method = 'GET', body } = {}) {
   const headers = { Accept: 'application/json' };
@@ -23,11 +23,15 @@ export async function playerRequest(path, { token, method = 'GET', body } = {}) 
   try {
     payload = await response.json();
   } catch {
-    throw new Error(`Server returned an invalid response (${response.status}).`);
+    throw new Error('Something went wrong. Please try again.');
   }
   if (!response.ok) {
     if (response.status === 401 && token) window.dispatchEvent(new Event('player:unauthorized'));
-    throw new Error(payload.error || `Request failed (${response.status}).`);
+    throw new Error(
+      response.status >= 500
+        ? 'Something went wrong. Please try again.'
+        : payload.error || 'Something went wrong. Please try again.'
+    );
   }
   return payload;
 }

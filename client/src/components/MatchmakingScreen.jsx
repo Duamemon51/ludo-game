@@ -1,4 +1,5 @@
-export default function MatchmakingScreen({ secondsLeft, onCancel }) {
+export default function MatchmakingScreen({ secondsLeft, onCancel, queueType = 'normal' }) {
+  const isTournament = queueType === 'tournament';
   return (
     <div className="matchmaking-overlay">
       <section
@@ -9,8 +10,12 @@ export default function MatchmakingScreen({ secondsLeft, onCancel }) {
         aria-describedby="matchmaking-countdown"
       >
         <div className="matchmaking-spinner" aria-hidden="true" />
-        <h2 id="matchmaking-title">Finding players</h2>
-        <p id="matchmaking-countdown">Searching for an opponent · {secondsLeft}s</p>
+        <h2 id="matchmaking-title">{isTournament ? 'Building tournament bracket' : 'Finding players'}</h2>
+        <p id="matchmaking-countdown">
+          {isTournament
+            ? `Waiting for up to 7 players; bots fill open seats · ${secondsLeft}s`
+            : `Searching for an opponent · ${secondsLeft}s`}
+        </p>
         <button type="button" className="matchmaking-cancel" onClick={onCancel}>Cancel</button>
       </section>
       <style>{`

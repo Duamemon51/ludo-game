@@ -9,15 +9,21 @@ export async function signIn(loginId, password) {
       body: JSON.stringify({ loginId, password }),
     });
   } catch {
-    throw new Error('Cannot reach the Node.js server. Check that the server is running.');
+    throw new Error("We couldn't sign you in. Please check your internet connection and try again.");
   }
 
   let payload;
   try {
     payload = await response.json();
   } catch {
-    throw new Error(`Server returned an invalid response (${response.status}).`);
+    throw new Error("We couldn't sign you in right now. Please try again.");
   }
-  if (!response.ok) throw new Error(payload.error || `Sign in failed (${response.status}).`);
+  if (!response.ok) {
+    throw new Error(
+      response.status >= 500
+        ? "We couldn't sign you in right now. Please try again."
+        : payload.error || "We couldn't sign you in right now. Please try again."
+    );
+  }
   return payload;
 }

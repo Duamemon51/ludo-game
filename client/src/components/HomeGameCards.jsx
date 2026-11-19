@@ -225,13 +225,6 @@ export default function HomeGameCards({
             <small>Min bet 300</small>
           </span>
         </button>
-        <button type="button" className="hg-card hg-private" disabled={loading || !active || !connected} onClick={onChoosePrivate}>
-          <span className="hg-icon" aria-hidden="true"><PrivateIcon /></span>
-          <span className="hg-text">
-            <strong>Private table</strong>
-            <small>2 or 4 players</small>
-          </span>
-        </button>
         {showTournament && (
           <button type="button" className="hg-card hg-tour" disabled={loading || !active} onClick={onChooseTournament}>
             <span className="hg-icon" aria-hidden="true"><TrophyIcon /></span>
@@ -241,6 +234,13 @@ export default function HomeGameCards({
             </span>
           </button>
         )}
+        <button type="button" className="hg-card hg-private" disabled={loading || !active || !connected} onClick={onChoosePrivate}>
+          <span className="hg-icon" aria-hidden="true"><PrivateIcon /></span>
+          <span className="hg-text">
+            <strong>Private table</strong>
+            <small>2 or 4 players</small>
+          </span>
+        </button>
       </div>
     </>
   );

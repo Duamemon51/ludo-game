@@ -13,18 +13,22 @@ export async function masterRequest(path, { token, method = 'GET', body } = {}) 
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw new Error('Cannot reach the Node.js server. Check that the server is running.');
+    throw new Error("We couldn't connect. Check your internet connection and try again.");
   }
 
   let payload;
   try {
     payload = await response.json();
   } catch {
-    throw new Error(`Server returned an invalid response (${response.status}).`);
+    throw new Error('Something went wrong. Please try again.');
   }
   if (!response.ok) {
     if (response.status === 401 && token) window.dispatchEvent(new Event('master:unauthorized'));
-    throw new Error(payload.error || `Request failed (${response.status}).`);
+    throw new Error(
+      response.status >= 500
+        ? 'Something went wrong. Please try again.'
+        : payload.error || 'Something went wrong. Please try again.'
+    );
   }
   return payload;
 }

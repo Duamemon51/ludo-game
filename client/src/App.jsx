@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { socket } from './socket';
 import Board from './components/Board';
 import PlayerPanel from './components/PlayerPanel';
@@ -7,10 +7,11 @@ import PlayerHome from './components/PlayerHome';
 import PrivateLobby from './components/PrivateLobby';
 import MatchmakingScreen from './components/MatchmakingScreen';
 import LoginScreen from './components/LoginScreen';
-import MasterDashboard from './components/MasterDashboard';
-import SuperAdminDashboard from './components/SuperAdminDashboard';
 import GameTopBar from './components/GameTopBar';
 import { signIn } from './authApi';
+
+const MasterDashboard = lazy(() => import('./components/MasterDashboard'));
+const SuperAdminDashboard = lazy(() => import('./components/SuperAdminDashboard'));
 
 const AUTO_MOVE_SINGLE = true; // auto-play when only one token can move
 const GAME_CHAT_ENABLED = false;
@@ -116,6 +117,7 @@ export default function App() {
   const [secondsLeft, setSecondsLeft] = useState(null);
   const [queueEnd, setQueueEnd] = useState(null);
   const [queueLeft, setQueueLeft] = useState(0);
+  const [matchmakingType, setMatchmakingType] = useState('normal');
   const [name, setName] = useState(
     () => localStorage.getItem('ludo-name') || 'Player' + Math.floor(100 + Math.random() * 900)
   );
@@ -260,7 +262,7 @@ export default function App() {
       setGame(null);
       setLobby(null);
     };
-    const onQueued = ({ waitMs, requestId }) => {
+    const onQueued = ({ waitMs, requestId, queueType }) => {
       if (
         cancelledMatchmakingRef.current
         || (requestId && requestId !== matchmakingRequestRef.current)
@@ -269,6 +271,7 @@ export default function App() {
         return;
       }
       setStatus('queued');
+      setMatchmakingType(queueType === 'tournament' ? 'tournament' : 'normal');
       setQueueEnd(Date.now() + waitMs);
     };
     const onLobby = (data) => {
@@ -286,6 +289,7 @@ export default function App() {
       setConnected(true);
       matchmakingRequestRef.current = null;
       cancelledMatchmakingRef.current = false;
+      setMatchmakingType('normal');
       leaveRequestRef.current = false;
       pendingOverRef.current = null;
       clearTimeout(resultTimerRef.current);
@@ -297,6 +301,19 @@ export default function App() {
       setBubbles({});
       setStatus('playing');
     };
+    const onTournamentUpdate = ({ message, status: tournamentStatus }) => {
+      if (!message) return;
+      window.dispatchEvent(new Event('player:refresh'));
+      showNotice({
+        title: tournamentStatus === 'COMPLETED'
+          ? 'Tournament complete'
+          : tournamentStatus === 'WAITING'
+            ? 'Waiting for other matches'
+            : 'Tournament update',
+        message,
+        type: tournamentStatus === 'COMPLETED' ? 'success' : 'info',
+      });
+    };
     const onUpdate = (state) => {
       setConnected(true);
       setGame({
@@ -307,6 +324,7 @@ export default function App() {
     const onMatchError = (message) => {
       matchmakingRequestRef.current = null;
       cancelledMatchmakingRef.current = false;
+      setMatchmakingType('normal');
       setMatchWinAmount(null);
       setStatus('idle');
       showNotice(message);
@@ -353,6 +371,7 @@ export default function App() {
     socket.on('notice', showNotice);
     socket.on('settlement_error', onSettlementError);
     socket.on('game_over', onOver);
+    socket.on('tournament_update', onTournamentUpdate);
     if (GAME_CHAT_ENABLED) socket.on('chat_message', onChat);
     if (socket.connected) socket.emit('resume_game'); // page was refreshed while already connected
 
@@ -373,6 +392,7 @@ export default function App() {
       socket.off('notice', showNotice);
       socket.off('settlement_error', onSettlementError);
       socket.off('game_over', onOver);
+      socket.off('tournament_update', onTournamentUpdate);
       if (GAME_CHAT_ENABLED) socket.off('chat_message', onChat);
       clearTimeout(resultTimerRef.current);
       clearTimeout(noticeTimerRef.current);
@@ -453,7 +473,9 @@ export default function App() {
     cancelledMatchmakingRef.current = false;
     setGameResult(null);
     const numericBet = Number(bet);
-    setMatchWinAmount(Number.isFinite(numericBet) && numericBet > 0
+    setMatchWinAmount(queueType === 'tournament'
+      ? null
+      : Number.isFinite(numericBet) && numericBet > 0
       ? Math.round(numericBet * 2 * 0.9)
       : null);
     socket.emit('find_match', { mode: 2, name: cleanName(), requestId, queueType, bet: numericBet });
@@ -467,6 +489,7 @@ export default function App() {
     cancelledMatchmakingRef.current = true;
     socket.emit('cancel_match', { requestId: matchmakingRequestRef.current });
     matchmakingRequestRef.current = null;
+    setMatchmakingType('normal');
     setStatus('idle');
   };
   const leaveLobby = () => {
@@ -489,6 +512,24 @@ export default function App() {
     const timer = setTimeout(reset, 3000);
     return () => clearTimeout(timer);
   }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!isMobileLayout || status !== 'playing') return undefined;
+
+    window.history.pushState({ ludoGameBackGuard: true }, '', window.location.href);
+    const handleBack = () => {
+      if (statusRef.current !== 'playing') return;
+      setLeaveOpen(true);
+      window.history.pushState({ ludoGameBackGuard: true }, '', window.location.href);
+    };
+    window.addEventListener('popstate', handleBack);
+
+    return () => {
+      window.removeEventListener('popstate', handleBack);
+      if (window.history.state?.ludoGameBackGuard) window.history.back();
+    };
+  }, [isMobileLayout, status]);
+
   const leaveGame = () => {
     if (!connected) return;
     leaveRequestRef.current = true;
@@ -606,10 +647,12 @@ export default function App() {
       return <LoginScreen onSignIn={handleSignIn} loading={loginLoading} error={loginError} />;
     }
     return (
-      <MasterDashboard
-        token={authSession.token}
-        onBack={signOut}
-      />
+      <Suspense fallback={<p role="status">Loading dashboard...</p>}>
+        <MasterDashboard
+          token={authSession.token}
+          onBack={signOut}
+        />
+      </Suspense>
     );
   }
 
@@ -617,7 +660,11 @@ export default function App() {
     if (authSession?.account.role !== 'SUPER_ADMIN') {
       return <LoginScreen onSignIn={handleSignIn} loading={loginLoading} error={loginError} />;
     }
-    return <SuperAdminDashboard token={authSession.token} onSignOut={signOut} />;
+    return (
+      <Suspense fallback={<p role="status">Loading dashboard...</p>}>
+        <SuperAdminDashboard token={authSession.token} onSignOut={signOut} />
+      </Suspense>
+    );
   }
 
   return (
@@ -680,7 +727,7 @@ export default function App() {
         />
       )}
 
-      {status === 'queued' && <MatchmakingScreen secondsLeft={queueLeft} onCancel={cancel} />}
+      {status === 'queued' && <MatchmakingScreen secondsLeft={queueLeft} queueType={matchmakingType} onCancel={cancel} />}
 
       {status === 'lobby' && lobby && (
         <PrivateLobby
