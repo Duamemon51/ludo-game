@@ -6,9 +6,10 @@ const {
   takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE, pickBotLevel,
   canStartPrivateRoom, isPrivateRoomStarted, createRoom, advanceTurn,
   isTournamentGroupReady, findReadyTournamentGroup, recordHardForcedCapture,
+  findHumanTournamentParticipant, emitTournamentUpdate,
 } = require('./rooms');
 
-function makeLobbyTestSocket(id, io) {
+function makeLobbyTestSocket(id, io, clientId = null) {
   const handlers = {};
   const emitted = [];
   const socket = {
@@ -19,7 +20,7 @@ function makeLobbyTestSocket(id, io) {
       authExpiresAt: Math.floor(Date.now() / 1000) + 3600,
     },
     connected: true,
-    handshake: { auth: {} },
+    handshake: { auth: clientId ? { clientId } : {} },
     on: (event, handler) => { handlers[event] = handler; },
     emit: (event, payload) => emitted.push({ event, payload }),
     join: () => {},
@@ -120,10 +121,24 @@ const humanBotTournamentRoom = createRoom(lobbyTestIo, [tournamentHuman], {
     tournamentHuman,
     { name: 'Expert Bot', isBot: true, level: 'expert', slot: 2 },
   ],
-  tournamentMatch: { tournamentId: 'test-tournament', roundNo: 1, matchNo: 1 },
+  tournamentMatch: {
+    tournamentId: 'test-tournament',
+    roundNo: 1,
+    matchNo: 1,
+    prizePool: 1234,
+  },
 });
 assert.deepStrictEqual(humanBotTournamentRoom.seats.map((seat) => seat.isBot), [false, true]);
 assert.strictEqual(humanBotTournamentRoom.game.tokensToWin, 1);
+assert.deepStrictEqual(
+  tournamentHumanSocket.emitted.find(({ event }) => event === 'match_found')?.payload.tournament,
+  {
+    id: 'test-tournament',
+    round: 1,
+    match: 1,
+    prizePool: 1234,
+  }
+);
 clearTimeout(humanBotTournamentRoom.timer);
 
 const botTournamentRoom = createRoom(lobbyTestIo, [], {
@@ -142,6 +157,99 @@ assert.ok(
 );
 clearTimeout(botTournamentRoom.timer);
 console.log('PASS: tournament rooms support human-vs-bot and bot-vs-bot 1v1 matches');
+const spectatorRuntime = {
+  status: 'IN_PROGRESS',
+  participants: [
+    { playerId: 'entrant-player', isBot: false, slot: 1 },
+    { playerId: null, isBot: true, slot: 2 },
+  ],
+};
+assert.strictEqual(
+  findHumanTournamentParticipant(spectatorRuntime, 'entrant-player'),
+  spectatorRuntime.participants[0],
+  'authenticated entrants should be recognized without relying on a browser client ID'
+);
+assert.strictEqual(findHumanTournamentParticipant(spectatorRuntime, 'other-player'), null);
+assert.strictEqual(findHumanTournamentParticipant(spectatorRuntime, null), null);
+console.log('PASS: tournament spectator membership is matched to the authenticated player');
+const tournamentUpdateEvents = new Map();
+const tournamentUpdateRuntime = {
+  id: 'targeted-update-tournament',
+  currentRound: 2,
+  participants: ['winner', 'previous-loser'].map((playerId, index) => {
+    const events = [];
+    tournamentUpdateEvents.set(playerId, events);
+    return {
+      playerId,
+      slot: index + 1,
+      isBot: false,
+      status: index === 0 ? 'WAITING' : 'ELIMINATED',
+      socket: { connected: true, emit: (...event) => events.push(event) },
+    };
+  }),
+};
+emitTournamentUpdate(tournamentUpdateRuntime, {
+  status: 'ROUND_READY',
+  message: (participant) => participant.status === 'ELIMINATED' ? null : 'The next round is starting.',
+});
+assert.strictEqual(tournamentUpdateEvents.get('winner').length, 1);
+assert.strictEqual(
+  tournamentUpdateEvents.get('previous-loser').length,
+  0,
+  'players eliminated earlier should not receive another player’s elimination notice'
+);
+emitTournamentUpdate(tournamentUpdateRuntime, {
+  status: 'WAITING',
+  onlySlots: [2],
+  message: 'You were eliminated from the tournament.',
+});
+assert.strictEqual(tournamentUpdateEvents.get('winner').length, 1);
+assert.strictEqual(tournamentUpdateEvents.get('previous-loser').length, 1);
+console.log('PASS: elimination popups are sent only to the newly eliminated player');
+const disconnectedClientId = 'resuming-tournament-client';
+const disconnectedSocket = makeLobbyTestSocket(
+  'resuming-tournament-before-close',
+  lobbyTestIo,
+  disconnectedClientId
+);
+const resumableRoom = createRoom(lobbyTestIo, [], {
+  tokensToWin: 1,
+  tournamentParticipants: [
+    {
+      ...tournamentHuman,
+      socket: disconnectedSocket.socket,
+      slot: 1,
+    },
+    { name: 'Finalist', isBot: true, level: 'expert', slot: 2 },
+  ],
+  tournamentMatch: {
+    tournamentId: 'resumable-tournament',
+    roundNo: 3,
+    matchNo: 1,
+    prizePool: 1234,
+  },
+});
+disconnectedSocket.handlers.disconnect();
+const resumedSocket = makeLobbyTestSocket(
+  'resuming-tournament-after-open',
+  lobbyTestIo,
+  'new-browser-client-id'
+);
+resumedSocket.socket.data.playerId = tournamentHuman.playerId;
+resumedSocket.handlers.resume_game();
+const resumedMatch = resumedSocket.emitted.find(({ event }) => event === 'match_found');
+assert.deepStrictEqual(resumedMatch?.payload.tournament, {
+  id: 'resumable-tournament',
+  round: 3,
+  match: 1,
+  prizePool: 1234,
+});
+assert.strictEqual(resumableRoom.seats[0].socketId, resumedSocket.socket.id);
+assert.strictEqual(resumableRoom.seats[0].isBot, false);
+assert.strictEqual(resumableRoom.seats[0].clientId, 'new-browser-client-id');
+clearTimeout(resumableRoom.timer);
+console.log('PASS: a reopened tab resumes its tournament game, round, and prize');
+
 assert.strictEqual(isTournamentGroupReady([
   { masterId: 'master-a', queuedAt: 1000 },
   { masterId: 'master-b', queuedAt: 2000 },

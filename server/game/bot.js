@@ -21,7 +21,7 @@ const EXPERT_MS = Number(process.env.LUDO_BOT_MS) || 350;
 const LEVEL_STRENGTH = {
   expert: 0.95,
   hard: 0.90,
-  medium: 0.80,
+  medium: 0.75,
   easy: 0.25,
   takeover: 0.10,
 };
@@ -29,7 +29,7 @@ const LEVEL_STRENGTH = {
 const QUICK_LEVEL_STRENGTH = {
   expert: 1,
   hard: 0.85,
-  medium: 0.70,
+  medium: 0.75,
   easy: 0.23,
   takeover: 0.10,
 };
@@ -37,7 +37,7 @@ const QUICK_LEVEL_STRENGTH = {
 const NORMAL_LEVEL_STRENGTH = {
   expert: 1,
   hard: 0.85,
-  medium: 0.70,
+  medium: 0.75,
   easy: 0.25,
   takeover: 0.10,
 };

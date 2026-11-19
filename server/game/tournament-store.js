@@ -1,4 +1,4 @@
-const { transaction } = require('../db/pool');
+const { pool, transaction } = require('../db/pool');
 const { calculateWager } = require('./wager');
 const { createRoundPairs, nextRoundMatches } = require('./tournament-bracket');
 
@@ -450,8 +450,22 @@ async function cancelTournament(tournamentId, reason) {
   });
 }
 
+async function cancelInterruptedTournaments(cancel = cancelTournament) {
+  const [rows] = await pool.execute(
+    "SELECT id FROM tournaments WHERE status = 'IN_PROGRESS' ORDER BY created_at, id"
+  );
+  const cancelledIds = [];
+  for (const { id } of rows) {
+    if (await cancel(id, 'Server restarted before the tournament completed. Entry fee refunded.')) {
+      cancelledIds.push(id);
+    }
+  }
+  return cancelledIds;
+}
+
 module.exports = {
   TournamentError,
+  cancelInterruptedTournaments,
   cancelTournament,
   completeTournamentMatch,
   createTournament,

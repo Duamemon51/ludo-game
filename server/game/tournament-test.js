@@ -7,7 +7,12 @@ const {
   createRoundPairs,
   nextRoundMatches,
 } = require('./tournament-bracket');
-const { createTournament, TournamentError } = require('./tournament-store');
+const {
+  cancelInterruptedTournaments,
+  createTournament,
+  TournamentError,
+} = require('./tournament-store');
+const { pool } = require('../db/pool');
 
 assert.deepEqual(allocateBotLevels(7), ['expert']);
 assert.deepEqual(allocateBotLevels(6), ['expert', 'hard']);
@@ -112,7 +117,32 @@ async function testParticipantValidation() {
   console.log('PASS: tournament entry validation rejects invalid participant records');
 }
 
+async function testInterruptedTournamentCancellation() {
+  const originalExecute = pool.execute;
+  const cancelled = [];
+  pool.execute = async (query) => {
+    assert.match(query, /status = 'IN_PROGRESS'/);
+    return [[{ id: 'stale-one' }, { id: 'stale-two' }]];
+  };
+  try {
+    const ids = await cancelInterruptedTournaments(async (id, reason) => {
+      cancelled.push({ id, reason });
+      return id === 'stale-one';
+    });
+    assert.deepEqual(ids, ['stale-one']);
+    assert.deepEqual(cancelled.map(({ id }) => id), ['stale-one', 'stale-two']);
+    assert.ok(cancelled.every(({ reason }) => reason.includes('Entry fee refunded')));
+  } finally {
+    pool.execute = originalExecute;
+  }
+  console.log('PASS: interrupted tournaments are cancelled and refunded before server startup');
+}
+
 testParticipantValidation().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+testInterruptedTournamentCancellation().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });

@@ -89,7 +89,7 @@ try {
 assert.strictEqual(s.winner, 'red');
 console.log('PASS: multi-dice planner finds a winning sequence');
 
-// Quick and Normal difficulties keep distinct plan-selection strengths.
+// Medium usually takes the best-scored plan, but occasionally chooses an alternative.
 const quickGame = engine.createGame(['red', 'yellow'], { tokensToWin: 1 });
 quickGame.tokens.red = [0, 1, -1, -1];
 quickGame.tokens.yellow[0] = 0;
@@ -99,7 +99,7 @@ try {
   for (const [level, quickThreshold] of [
     ['expert', 0.999],
     ['hard', 0.729],
-    ['medium', 0.469],
+    ['medium', 0.749],
     ['easy', 0.229],
     ['takeover', 0.099],
   ]) {
@@ -120,7 +120,7 @@ try {
 } finally {
   Math.random = originalRandomForQuickTest;
 }
-console.log('PASS: difficulty levels use distinct Quick and Normal plan selection');
+console.log('PASS: medium uses a 75% best-plan chance in Quick and Normal matches');
 
 // Test 3: bot returns null when it has no moves
 s = engine.createGame(['red', 'yellow']);
