@@ -103,6 +103,41 @@ const fallbackRoom = createRoom(lobbyTestIo, [{
 assert.deepStrictEqual(fallbackRoom.seats.map((seat) => seat.isBot), [false, true]);
 clearTimeout(fallbackRoom.timer);
 
+const tournamentHumanSocket = makeLobbyTestSocket('tournament-human', lobbyTestIo);
+const tournamentHuman = {
+  name: 'Tournament Human',
+  playerId: tournamentHumanSocket.socket.data.playerId,
+  masterId: tournamentHumanSocket.socket.data.masterId,
+  matchmakingId: 'tournament-request',
+  socket: tournamentHumanSocket.socket,
+  isBot: false,
+  slot: 1,
+};
+const humanBotTournamentRoom = createRoom(lobbyTestIo, [tournamentHuman], {
+  tokensToWin: 1,
+  tournamentParticipants: [
+    tournamentHuman,
+    { name: 'Expert Bot', isBot: true, level: 'expert', slot: 2 },
+  ],
+  tournamentMatch: { tournamentId: 'test-tournament', roundNo: 1, matchNo: 1 },
+});
+assert.deepStrictEqual(humanBotTournamentRoom.seats.map((seat) => seat.isBot), [false, true]);
+assert.strictEqual(humanBotTournamentRoom.game.tokensToWin, 1);
+clearTimeout(humanBotTournamentRoom.timer);
+
+const botTournamentRoom = createRoom(lobbyTestIo, [], {
+  tokensToWin: 1,
+  tournamentParticipants: [
+    { name: 'Hard Bot', isBot: true, level: 'hard', slot: 1 },
+    { name: 'Medium Bot', isBot: true, level: 'medium', slot: 2 },
+  ],
+  tournamentMatch: { tournamentId: 'test-tournament', roundNo: 1, matchNo: 2 },
+});
+assert.deepStrictEqual(botTournamentRoom.seats.map((seat) => seat.isBot), [true, true]);
+assert.strictEqual(botTournamentRoom.game.tokensToWin, 1);
+clearTimeout(botTournamentRoom.timer);
+console.log('PASS: tournament rooms support human-vs-bot and bot-vs-bot 1v1 matches');
+
 assert.strictEqual(canStartPrivateRoom(2, 1), false, '2-player tables require both human players');
 assert.strictEqual(canStartPrivateRoom(2, 2), true, '2-player tables start when full');
 assert.strictEqual(canStartPrivateRoom(4, 1), false, '4-player tables require at least two human players');
