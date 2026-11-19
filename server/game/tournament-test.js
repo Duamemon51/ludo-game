@@ -3,6 +3,7 @@ const { calculateWager } = require('./wager');
 const {
   allocateBotLevels,
   buildParticipants,
+  createBracketPreview,
   createRoundPairs,
   nextRoundMatches,
 } = require('./tournament-bracket');
@@ -37,6 +38,33 @@ assert.deepEqual(createRoundPairs(1, [1, 2, 3, 4, 5, 6, 7, 8]), [
 ]);
 assert.deepEqual(createRoundPairs(2, [2, 4, 6, 8]), [[2, 4], [6, 8]]);
 assert.deepEqual(createRoundPairs(3, [4, 8]), [[4, 8]]);
+const preview = createBracketPreview(
+  participants,
+  createRoundPairs(1, participants.map(({ slot }) => slot)).map(
+    ([player1_slot, player2_slot], index) => ({
+      match_no: index + 1,
+      player1_slot,
+      player2_slot,
+    })
+  ),
+  participants[0].slot
+);
+assert.equal(preview.matches.length, 4);
+assert.equal(preview.matches.flatMap(({ players }) => players).length, 8);
+assert.deepEqual(preview.matches[0].players.map(({ slot }) => slot), [1, 2]);
+assert.equal(preview.yourSlot, participants[0].slot);
+assert.ok(preview.matches.flatMap(({ players }) => players).every((player) =>
+  Object.keys(player).sort().join(',') === 'name,slot'
+), 'preview contains names and slots without exposing participant bot flags');
+assert.throws(
+  () => createBracketPreview(participants, [{
+    match_no: 1,
+    player1_slot: 1,
+    player2_slot: 9,
+  }], 1),
+  RangeError
+);
+console.log('PASS: tournament preview contains four name-only first-round pairings');
 
 const quarterFinals = [
   { match_no: 1, status: 'COMPLETED', winner_slot: 2 },
