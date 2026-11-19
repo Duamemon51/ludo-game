@@ -1,10 +1,12 @@
 const assert = require('node:assert/strict');
+const { calculateWager } = require('./wager');
 const {
   allocateBotLevels,
   buildParticipants,
   createRoundPairs,
   nextRoundMatches,
 } = require('./tournament-bracket');
+const { createTournament, TournamentError } = require('./tournament-store');
 
 assert.deepEqual(allocateBotLevels(7), ['expert']);
 assert.deepEqual(allocateBotLevels(6), ['expert', 'hard']);
@@ -64,3 +66,32 @@ assert.deepEqual(nextRoundMatches(3, [
   { match_no: 1, status: 'COMPLETED', winner_slot: 4 },
 ]), []);
 console.log('PASS: round barrier waits for all results before creating the next round');
+
+async function testParticipantValidation() {
+  const invalidBotParticipants = participants.map((participant) => ({ ...participant }));
+  invalidBotParticipants.find((participant) => participant.isBot && participant.level === 'hard').level = 'unknown';
+  await assert.rejects(
+    createTournament({ id: 'invalid-bot', entryFee: 300, participants: invalidBotParticipants }),
+    TournamentError
+  );
+
+  const invalidHumanParticipants = participants.map((participant) => ({ ...participant }));
+  invalidHumanParticipants.find((participant) => !participant.isBot).level = 'medium';
+  await assert.rejects(
+    createTournament({ id: 'invalid-human', entryFee: 300, participants: invalidHumanParticipants }),
+    TournamentError
+  );
+  console.log('PASS: tournament entry validation rejects invalid participant records');
+}
+
+testParticipantValidation().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+assert.deepEqual(calculateWager(1000, 10, false, 5), {
+  feePerPlayer: 100,
+  platformFee: 100,
+  payout: 4900,
+});
+console.log('PASS: tournament uses the same one-entry fee and net payout as regular matches');
