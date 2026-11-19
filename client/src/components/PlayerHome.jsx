@@ -105,6 +105,68 @@ function outcome(match) {
   return 'other';
 }
 
+function buildTournamentBracket(tournament) {
+  if (!tournament) return [];
+
+  const rounds = [
+    { number: 1, title: 'Quarter-finals', matchCount: 4 },
+    { number: 2, title: 'Semi-finals', matchCount: 2 },
+    { number: 3, title: 'Final', matchCount: 1 },
+  ];
+  const savedMatches = tournament.matches || [];
+  const getSavedMatch = (round, matchNo) => savedMatches.find(
+    (match) => match.round === round && match.match === matchNo
+  );
+  const getAdvancer = (round, matchNo) => {
+    const previousMatch = getSavedMatch(round, matchNo);
+    if (previousMatch?.status === 'COMPLETED' && previousMatch.winnerSlot != null) {
+      const winnerIndex = previousMatch.playerSlots.indexOf(previousMatch.winnerSlot);
+      if (winnerIndex >= 0) {
+        return {
+          slot: previousMatch.winnerSlot,
+          name: previousMatch.players[winnerIndex],
+        };
+      }
+    }
+    return {
+      slot: null,
+      name: `Winner of ${rounds[round - 1].title.toLowerCase()} match ${matchNo}`,
+    };
+  };
+
+  return rounds.map((round) => ({
+    ...round,
+    matches: Array.from({ length: round.matchCount }, (_, index) => {
+      const matchNo = index + 1;
+      const savedMatch = getSavedMatch(round.number, matchNo);
+      if (savedMatch) {
+        const winnerIndex = savedMatch.winnerSlot == null
+          ? -1
+          : savedMatch.playerSlots.indexOf(savedMatch.winnerSlot);
+        return {
+          matchNo,
+          status: savedMatch.status,
+          players: savedMatch.players.map((name, playerIndex) => ({
+            slot: savedMatch.playerSlots[playerIndex],
+            name,
+            isWinner: winnerIndex === playerIndex,
+          })),
+        };
+      }
+
+      const previousRound = round.number - 1;
+      return {
+        matchNo,
+        status: 'WAITING',
+        players: [
+          getAdvancer(previousRound, index * 2 + 1),
+          getAdvancer(previousRound, index * 2 + 2),
+        ],
+      };
+    }),
+  }));
+}
+
 function Avatar({ src, letter }) {
   return (
     <span className="ph-avatar" aria-hidden="true">
@@ -252,9 +314,16 @@ export default function PlayerHome({
     (match) => match.round === currentTournament.currentRound
   ) || [];
   const completedCurrentMatches = currentRoundMatches.filter((match) => match.status === 'COMPLETED').length;
+  const tournamentBracket = buildTournamentBracket(currentTournament);
+  const championName = tournamentBracket[2]?.matches[0]?.players.find((player) => player.isWinner)?.name;
   const tournamentRoundName = ['Quarter-finals', 'Semi-finals', 'Final'][currentTournament?.currentRound - 1];
-  const currentTournamentMessage = currentTournament?.participantStatus === 'ELIMINATED'
-    ? 'You have been eliminated. The tournament is still in progress.'
+  const isTournamentEliminated = currentTournament?.participantStatus === 'ELIMINATED';
+  const currentTournamentMessage = isTournamentEliminated
+    ? 'You were eliminated from this tournament.'
+    : currentTournament?.status === 'COMPLETED'
+    ? currentTournament.participantStatus === 'CHAMPION'
+      ? 'You are the tournament champion!'
+      : `Tournament complete. ${championName || 'The champion'} won.`
     : currentTournament?.participantStatus === 'WAITING'
       ? currentRoundMatches.some((match) => match.status === 'IN_PROGRESS')
         ? 'You qualified and are waiting for the remaining matches.'
@@ -559,6 +628,27 @@ export default function PlayerHome({
         .ph-tournament button { margin-top: 10px; }
         .ph-tournament-panel > p { margin: 6px 0; }
         .ph-tournament-panel .ph-grid { margin-top: 8px; }
+        .ph-bracket-panel { margin-top: 12px; border: 1px solid #ead9aa; border-radius: 14px; padding: 14px; background: #fff9e9; }
+        .ph-bracket-panel h3 { margin: 0 0 10px; color: #3b2412; font-size: 17px; }
+        .ph-bracket { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+        .ph-bracket-round { min-width: 0; }
+        .ph-bracket-round h4 { margin: 0 0 7px; color: #715637; font-size: 13px; }
+        .ph-bracket-match { min-width: 0; margin-bottom: 8px; border: 1px solid #ffffff24; border-radius: 10px; padding: 8px; color: #3b2412; background: #fff9e9; }
+        .ph-bracket-match:last-child { margin-bottom: 0; }
+        .ph-bracket-match-head { display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-bottom: 5px; color: #806646; font-size: 10px; }
+        .ph-bracket-status { flex: none; border-radius: 99px; padding: 2px 6px; background: #e9dfc5; font-weight: 800; }
+        .ph-bracket-status.live { color: #fff; background: #c62828; }
+        .ph-bracket-status.completed { color: #fff; background: #277447; }
+        .ph-bracket-player { overflow: hidden; border-radius: 6px; padding: 4px 5px; color: #5e4322; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+        .ph-bracket-player + .ph-bracket-player { margin-top: 3px; border-top: 1px solid #ead9aa; padding-top: 6px; }
+        .ph-bracket-player.winner { color: #1d6b3b; background: #3fa34d18; font-weight: 800; }
+        .ph-bracket-player:not(.winner).waiting { color: #927a55; font-style: italic; }
+        @media (max-width: 900px) {
+          .ph-bracket { grid-template-columns: minmax(0, 1fr); }
+          .ph-bracket-round { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 8px; }
+          .ph-bracket-round h4 { grid-column: 1 / -1; margin-bottom: 0; }
+          .ph-bracket-match { margin-bottom: 0; }
+        }
         .ph-rows { width: 100%; margin-top: 15px; border-collapse: collapse; }
         .ph-rows th, .ph-rows td { border-bottom: 1px solid #ffffff1b; padding: 12px 8px; text-align: left; font-size: 13px; }
         .ph-rows th { color: #ffd269; }
@@ -1220,12 +1310,53 @@ export default function PlayerHome({
             <section className="ph-panel ph-tournament-panel">
               <PanelHead className="ph-close-only" title="8-player Knockout" onBack={() => setPage('home')} closeOnly />
               <p>One-time entry. Win up to {tournamentPayout.toLocaleString()} credits after fees; the final prize depends on tournament entries.</p>
-              {currentTournament && (
-                <div className="ph-tournament" aria-live="polite">
-                  <h3>Your active tournament</h3>
-                  <p>{tournamentRoundName} · {completedCurrentMatches}/{currentRoundMatches.length} matches complete</p>
-                  <p>{currentTournamentMessage}</p>
-                </div>
+              {currentTournament && !isTournamentEliminated && (
+                <>
+                  <div className="ph-tournament" aria-live="polite">
+                    <h3>Tournament status</h3>
+                    <p>{currentTournament.status === 'COMPLETED'
+                      ? 'All rounds complete'
+                      : `${tournamentRoundName} · ${completedCurrentMatches}/${currentRoundMatches.length} matches complete`}
+                    </p>
+                    <p>{currentTournamentMessage}</p>
+                  </div>
+                  <div className="ph-bracket-panel" aria-label="Tournament bracket">
+                    <h3>8-player bracket</h3>
+                    <div className="ph-bracket">
+                      {tournamentBracket.map((round) => (
+                        <section className="ph-bracket-round" key={round.number}>
+                          <h4>{round.title}</h4>
+                          {round.matches.map((match) => {
+                            const statusLabel = match.status === 'IN_PROGRESS'
+                              ? 'Live'
+                              : match.status === 'COMPLETED'
+                                ? 'Completed'
+                                : 'Waiting';
+                            return (
+                              <article className="ph-bracket-match" key={match.matchNo}>
+                                <div className="ph-bracket-match-head">
+                                  <span>Match {match.matchNo}</span>
+                                  <span className={`ph-bracket-status ${match.status.toLowerCase()}`}>
+                                    {statusLabel}
+                                  </span>
+                                </div>
+                                {match.players.map((player, index) => (
+                                  <div
+                                    className={`ph-bracket-player${player.isWinner ? ' winner' : ''}${player.slot == null ? ' waiting' : ''}`}
+                                    key={`${player.slot ?? player.name}-${index}`}
+                                    title={player.name}
+                                  >
+                                    {player.name}
+                                  </div>
+                                ))}
+                              </article>
+                            );
+                          })}
+                        </section>
+                      ))}
+                    </div>
+                  </div>
+                </>
               )}
               <div className="ph-grid">
                 <div className="ph-tournament-bet-content" key={TOURNAMENT.id}>
@@ -1271,7 +1402,7 @@ export default function PlayerHome({
                   <div className="ph-prize-summary" aria-live="polite">
                     <div><span>Maximum prize pool</span><strong>{tournamentPot.toLocaleString()}</strong></div>
                     <div><span>Platform fee ({feePercent}% of entry)</span><strong>{tournamentFee.toLocaleString()}</strong></div>
-                    <div className="ph-prize-winner"><span>You can win up to</span><strong>{tournamentPayout.toLocaleString()} credits</strong></div>
+                    <div className="ph-prize-winner"><span>You can win up to</span><strong>{tournamentPayout.toLocaleString()}</strong></div>
                   </div>
                   <button
                     type="button"

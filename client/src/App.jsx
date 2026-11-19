@@ -6,6 +6,7 @@ import ChatSheet from './components/ChatSheet';
 import PlayerHome from './components/PlayerHome';
 import PrivateLobby from './components/PrivateLobby';
 import MatchmakingScreen from './components/MatchmakingScreen';
+import TournamentBracketScreen from './components/TournamentBracketScreen';
 import LoginScreen from './components/LoginScreen';
 import GameTopBar from './components/GameTopBar';
 import { signIn } from './authApi';
@@ -93,7 +94,7 @@ export default function App() {
     () => window.matchMedia(MOBILE_LAYOUT_QUERY).matches
   );
   const [connected, setConnected] = useState(socket.connected);
-  const [status, setStatus] = useState('idle'); // idle | queued | lobby | playing | finishing | over
+  const [status, setStatus] = useState('idle'); // idle | queued | bracket | lobby | playing | finishing | over
   const [authSession, setAuthSession] = useState(readAuthSession);
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
@@ -118,6 +119,7 @@ export default function App() {
   const [queueEnd, setQueueEnd] = useState(null);
   const [queueLeft, setQueueLeft] = useState(0);
   const [matchmakingType, setMatchmakingType] = useState('normal');
+  const [tournamentBracketPreview, setTournamentBracketPreview] = useState(null);
   const [name, setName] = useState(
     () => localStorage.getItem('ludo-name') || 'Player' + Math.floor(100 + Math.random() * 900)
   );
@@ -261,6 +263,7 @@ export default function App() {
       setStatus('idle');
       setGame(null);
       setLobby(null);
+      setTournamentBracketPreview(null);
     };
     const onQueued = ({ waitMs, requestId, queueType }) => {
       if (
@@ -273,6 +276,10 @@ export default function App() {
       setStatus('queued');
       setMatchmakingType(queueType === 'tournament' ? 'tournament' : 'normal');
       setQueueEnd(Date.now() + waitMs);
+    };
+    const onTournamentBracket = (bracket) => {
+      setTournamentBracketPreview(bracket);
+      setStatus('bracket');
     };
     const onLobby = (data) => {
       setLobby(data);
@@ -290,6 +297,7 @@ export default function App() {
       matchmakingRequestRef.current = null;
       cancelledMatchmakingRef.current = false;
       setMatchmakingType('normal');
+      setTournamentBracketPreview(null);
       leaveRequestRef.current = false;
       pendingOverRef.current = null;
       clearTimeout(resultTimerRef.current);
@@ -326,6 +334,7 @@ export default function App() {
       cancelledMatchmakingRef.current = false;
       setMatchmakingType('normal');
       setMatchWinAmount(null);
+      setTournamentBracketPreview(null);
       setStatus('idle');
       showNotice(message);
     };
@@ -363,6 +372,7 @@ export default function App() {
     document.addEventListener('visibilitychange', onPageVisible);
     socket.on('no_game', onNoGame);
     socket.on('queued', onQueued);
+    socket.on('tournament_bracket', onTournamentBracket);
     socket.on('lobby_update', onLobby);
     socket.on('lobby_error', showNotice);
     socket.on('match_found', onMatch);
@@ -384,6 +394,7 @@ export default function App() {
       document.removeEventListener('visibilitychange', onPageVisible);
       socket.off('no_game', onNoGame);
       socket.off('queued', onQueued);
+      socket.off('tournament_bracket', onTournamentBracket);
       socket.off('lobby_update', onLobby);
       socket.off('lobby_error', showNotice);
       socket.off('match_found', onMatch);
@@ -728,6 +739,12 @@ export default function App() {
       )}
 
       {status === 'queued' && <MatchmakingScreen secondsLeft={queueLeft} queueType={matchmakingType} onCancel={cancel} />}
+      {status === 'bracket' && tournamentBracketPreview && (
+        <TournamentBracketScreen
+          matches={tournamentBracketPreview.matches}
+          yourSlot={tournamentBracketPreview.yourSlot}
+        />
+      )}
 
       {status === 'lobby' && lobby && (
         <PrivateLobby
