@@ -475,6 +475,10 @@ export default function PlayerHome({
         .ph-wallet strong { display: block; color: #ffd269; font-family: 'Lilita One', sans-serif; font-weight: 400; font-size: 18px; line-height: 1.05; }
         .ph-wallet small { font-size: 10px; font-weight: 700; opacity: .75; }
         .ph-wallet:active { transform: scale(.97); }
+        .ph-logout-desktop { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; border: 1px solid #fcc419b3; border-radius: 999px; padding: 0 15px; color: #ffe9b0; background: linear-gradient(180deg, #6b3a17f2, #43230fe6); box-shadow: inset 0 1px 0 #ffffff24, 0 4px 10px #0006; font-family: 'Lilita One', sans-serif; font-size: 14px; white-space: nowrap; }
+        .ph-logout-desktop svg { width: 18px; height: 18px; }
+        .ph-logout-desktop:active { transform: translateY(2px); }
+        .ph-logout-desktop:focus-visible { outline: 3px solid #ffd269; outline-offset: 2px; }
         .ph-menu-btn { display: none; width: 44px; height: 44px; border: 0; border-radius: 50%; place-items: center; color: #ffd269; background: linear-gradient(180deg, #6b3a17f2, #43230fe6); box-shadow: inset 0 0 0 1.5px #fcc419b3, 0 4px 10px #0006; }
         .ph-menu-btn:active { transform: scale(.94); }
         .ph-layout { position: relative; z-index: 1; flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px); align-items: center; gap: clamp(24px, 5vw, 76px); padding: 18px clamp(20px, 7vw, 110px) 30px; }
@@ -634,6 +638,7 @@ export default function PlayerHome({
           .ph-wallet { display: block; padding: 4px 9px; }
           .ph-wallet strong { font-size: 15px; }
           .ph-wallet small { font-size: 8px; }
+          .ph-logout-desktop { display: none; }
           .ph-menu-btn { display: grid; }
           .ph-layout { display: flex; flex-direction: column; align-items: stretch; gap: 14px; padding: 6px 12px 100px; }
           .ph-layout-detail { flex: 1 1 0; min-height: 0; gap: 0; overflow: hidden; padding-top: 14px; }
@@ -1076,6 +1081,10 @@ export default function PlayerHome({
             </span>
             <small>AVAILABLE</small><strong>{availableBalance.toLocaleString()}</strong>
             <span className="ph-plus" aria-hidden="true">+</span>
+          </button>
+          <button type="button" className="ph-logout-desktop" onClick={onSignOut}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3" /><path d="M12 3h6a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3h-6" /></svg>
+            Log out
           </button>
         </div>
       </header>

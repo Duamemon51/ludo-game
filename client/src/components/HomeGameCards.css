@@ -1,4 +1,4 @@
-.hg-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-top:22px}
+.hg-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding-top:22px}
 .hg-private-mode-cards{padding-top:16px}
 .hg-card{position:relative;height:112px;padding:0;border:0;border-radius:16px;cursor:pointer;color:#fff;
   font-family:'Lilita One',sans-serif;-webkit-tap-highlight-color:transparent;
