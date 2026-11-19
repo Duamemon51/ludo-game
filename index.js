@@ -6,6 +6,7 @@ const helmet = require('helmet');
 const jwt = require('jsonwebtoken');
 const { Server } = require('socket.io');
 const { pool } = require('./db/pool');
+const { cancelInterruptedTournaments } = require('./game/tournament-store');
 const { registerHandlers } = require('./socket/rooms');
 
 class SocketAuthError extends Error {}
@@ -122,4 +123,19 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => console.log('Server running on port ' + PORT));
+
+async function startServer() {
+  const cancelledTournaments = await cancelInterruptedTournaments();
+  if (cancelledTournaments.length > 0) {
+    console.warn(
+      `Cancelled and refunded ${cancelledTournaments.length} interrupted tournament(s).`
+    );
+  }
+  server.listen(PORT, () => console.log('Server running on port ' + PORT));
+}
+
+startServer().catch(async (error) => {
+  console.error('Could not recover interrupted tournaments before server startup:', error);
+  await pool.end();
+  process.exitCode = 1;
+});

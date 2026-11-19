@@ -358,6 +358,16 @@ function broadcast(io, room) {
       io.to(seat.socketId).emit('game_update', publicState(room, seat.socketId));
     }
   }
+  for (const socketId of room.spectators || []) {
+    io.to(socketId).emit('game_update', publicState(room, socketId));
+  }
+}
+
+function emitRoomEvent(io, room, event, payload) {
+  io.to(room.id).emit(event, payload);
+  for (const socketId of room.spectators || []) {
+    io.to(socketId).emit(event, payload);
+  }
 }
 
 // ---------- Turn flow ----------
@@ -666,7 +676,7 @@ function finishGame(io, room) {
         room.phase = 'settlement-error';
         room.finishing = false;
         broadcast(io, room);
-        io.to(room.id).emit('settlement_error',
+        emitRoomEvent(io, room, 'settlement_error',
           'Game ended, but the wallet settlement is still processing. Your credits have not been lost.');
         room.settlementTimer = setTimeout(() => finishGame(io, room), 10000);
         return;
@@ -674,7 +684,7 @@ function finishGame(io, room) {
       if (wagerResult.cancelled) {
         room.phase = 'over';
         broadcast(io, room);
-        io.to(room.id).emit('game_over', { winner: null, cancelled: true, wager: null });
+        emitRoomEvent(io, room, 'game_over', { winner: null, cancelled: true, wager: null });
         destroyRoom(io, room);
         return;
       }
@@ -682,7 +692,7 @@ function finishGame(io, room) {
 
     room.phase = 'over';
     broadcast(io, room);
-    io.to(room.id).emit('game_over', {
+    emitRoomEvent(io, room, 'game_over', {
       winner: room.game.winner,
       wager: wagerResult,
       tournament: room.tournamentMatch ? {
@@ -721,7 +731,7 @@ function finishGame(io, room) {
     room.phase = 'settlement-error';
     console.error(`Could not finish game ${room.id}:`, error);
     broadcast(io, room);
-    io.to(room.id).emit('settlement_error',
+    emitRoomEvent(io, room, 'settlement_error',
       'Game ended, but its result could not be recorded. Please contact support.');
     room.settlementTimer = setTimeout(() => finishGame(io, room), 10000);
   });
@@ -845,6 +855,13 @@ function destroyRoom(io, room) {
       s.data.color = null;
     }
   }
+  for (const socketId of room.spectators || []) {
+    const spectator = io.sockets.sockets.get(socketId);
+    if (spectator?.data.spectatingRoomId === room.id) {
+      spectator.data.spectatingRoomId = null;
+    }
+  }
+  room.spectators?.clear();
   rooms.delete(room.id);
 }
 
@@ -914,6 +931,7 @@ function createRoom(io, players, {
     id, mode, seats,
     match: wager,
     tournamentMatch,
+    spectators: new Set(),
     game: engine.createGame(seats.map((seat) => seat.color), { tokensToWin }),
     phase: 'roll', dice: null, diceOptions: [], pendingDiceOptions: [], captureDiceOptions: [], dieRollId: 0,
     rolledDice: [], rolledDiceIds: [], usedDiceIds: [], rollId: 0, validMoves: [], lastMove: null,
@@ -950,6 +968,7 @@ function createRoom(io, players, {
         id: tournamentMatch.tournamentId,
         round: tournamentMatch.roundNo,
         match: tournamentMatch.matchNo,
+        prizePool: tournamentMatch.prizePool,
       } : undefined,
       wager: wager ? {
         bet: wager.bet,
@@ -984,6 +1003,8 @@ function emitTournamentUpdate(runtime, {
   for (const participant of runtime.participants) {
     if (participant.isBot || !participant.socket?.connected) continue;
     if (onlySlots && !onlySlots.includes(participant.slot)) continue;
+    const participantMessage = typeof message === 'function' ? message(participant) : message;
+    if (!participantMessage) continue;
     participant.socket.emit('tournament_update', {
       tournamentId: runtime.id,
       status,
@@ -992,7 +1013,7 @@ function emitTournamentUpdate(runtime, {
       participantStatus: participant.status,
       championName: runtime.championName || null,
       payout,
-      message: typeof message === 'function' ? message(participant) : message,
+      message: participantMessage,
     });
   }
 }
@@ -1055,6 +1076,7 @@ async function launchTournamentRound(io, runtime, roundNo, roundMatches) {
           tournamentId: runtime.id,
           roundNo,
           matchNo: match.match_no,
+          prizePool: runtime.prizePool,
         },
       });
     } catch (error) {
@@ -1071,8 +1093,10 @@ async function launchTournamentRound(io, runtime, roundNo, roundMatches) {
       status: 'ROUND_STARTED',
       roundNo,
       message: (participant) => participant.status === 'ELIMINATED'
-        ? 'You were eliminated from the tournament.'
-        : `${TOURNAMENT_ROUND_NAMES[roundNo]} have started.`,
+        ? null
+        : roundNo === 3
+          ? 'Both semi-finals are complete. The final is starting now.'
+          : `${TOURNAMENT_ROUND_NAMES[roundNo]} have started.`,
     });
   }
 }
@@ -1100,6 +1124,7 @@ async function beginTournament(io, queuedPlayers) {
     id,
     entryFee: tournament.entryFee,
     humanCount: tournament.humanCount,
+    prizePool: tournament.prizePool,
     participants: participants.map((participant) => ({ ...participant, status: 'WAITING' })),
     currentRound: 1,
     status: 'IN_PROGRESS',
@@ -1195,9 +1220,14 @@ async function finishTournamentMatch(io, room, storeResult) {
     emitTournamentUpdate(runtime, {
       status: 'ROUND_READY',
       roundNo: storeResult.roundNo,
-      message: (participant) => participant.status === 'ELIMINATED'
-        ? 'You were eliminated from the tournament.'
-        : `All ${TOURNAMENT_ROUND_NAMES[room.tournamentMatch.roundNo].toLowerCase()} are complete. ${TOURNAMENT_ROUND_NAMES[storeResult.roundNo]} are next.`,
+      message: (participant) => {
+        if (participant.slot === loser?.slot) return 'You were eliminated from the tournament.';
+        if (participant.status === 'ELIMINATED') return null;
+        if (storeResult.roundNo === 3) {
+          return 'Both semi-finals are complete. The final is starting now.';
+        }
+        return 'All quarter-finals are complete. The semi-finals are starting now.';
+      },
     });
     await launchTournamentRound(io, runtime, storeResult.roundNo, storeResult.matches);
     return;
@@ -1247,7 +1277,7 @@ async function abortTournamentRuntime(io, runtime, message) {
     room.phase = 'over';
     clearTimeout(room.timer);
     broadcast(io, room);
-    io.to(room.id).emit('game_over', { winner: null, cancelled: true, wager: null });
+    emitRoomEvent(io, room, 'game_over', { winner: null, cancelled: true, wager: null });
     destroyRoom(io, room);
   }
   for (const participant of runtime.participants) {
@@ -1552,19 +1582,64 @@ function restoreSeatControl(seat, socket) {
 
 function resumeGame(io, socket) {
   const clientId = socket.data.clientId;
-  const tournamentRef = clientId && tournamentByClientId.get(String(clientId));
-  const tournamentRuntime = tournamentRef && tournaments.get(tournamentRef.tournamentId);
-  const tournamentParticipant = tournamentRuntime?.participants.find((participant) =>
+  let tournamentRef = clientId && tournamentByClientId.get(String(clientId));
+  let tournamentRuntime = tournamentRef && tournaments.get(tournamentRef.tournamentId);
+  let tournamentParticipant = tournamentRuntime?.participants.find((participant) =>
     participant.slot === tournamentRef.slot
   );
+  if (!tournamentParticipant && socket.data.playerId) {
+    tournamentRuntime = [...tournaments.values()].find((runtime) =>
+      runtime.status === 'IN_PROGRESS'
+      && findHumanTournamentParticipant(runtime, socket.data.playerId)
+    );
+    tournamentParticipant = findHumanTournamentParticipant(tournamentRuntime, socket.data.playerId);
+    if (tournamentRuntime && tournamentParticipant) {
+      tournamentRef = { tournamentId: tournamentRuntime.id, slot: tournamentParticipant.slot };
+      if (clientId) tournamentByClientId.set(String(clientId), tournamentRef);
+    }
+  }
   if (tournamentParticipant) {
     tournamentParticipant.socket = socket;
     socket.data.tournamentId = tournamentRuntime.id;
     socket.data.tournamentSlot = tournamentParticipant.slot;
   }
-  const roomId = clientId && sessions.get(clientId);
-  const room = roomId && rooms.get(roomId);
-  const seat = room && room.seats.find((s) => s.clientId === clientId);
+  let roomId = clientId && sessions.get(clientId);
+  let room = roomId && rooms.get(roomId);
+  let seat = room && room.seats.find((candidate) => candidate.clientId === clientId);
+  if (
+    (!seat || seat.playerId && String(seat.playerId) !== String(socket.data.playerId))
+    && socket.data.playerId
+  ) {
+    const activeSeat = [...rooms.values()]
+      .map((candidateRoom) => ({
+        room: candidateRoom,
+        seat: candidateRoom.seats.find((candidate) =>
+          candidate.playerId
+          && String(candidate.playerId) === String(socket.data.playerId)
+          && candidate.clientId
+        ),
+      }))
+      .find(({ room: candidateRoom, seat: candidateSeat }) =>
+        candidateSeat && candidateRoom.phase !== 'over'
+      );
+    if (activeSeat) {
+      room = activeSeat.room;
+      seat = activeSeat.seat;
+      roomId = room.id;
+      const previousClientId = seat.clientId;
+      if (previousClientId && sessions.get(previousClientId) === room.id) {
+        sessions.delete(previousClientId);
+      }
+      seat.clientId = String(clientId || previousClientId);
+      if (clientId) sessions.set(String(clientId), room.id);
+      if (tournamentRuntime && tournamentParticipant && clientId) {
+        tournamentByClientId.set(String(clientId), {
+          tournamentId: tournamentRuntime.id,
+          slot: tournamentParticipant.slot,
+        });
+      }
+    }
+  }
   if (!seat) {
     if (tournamentRuntime && tournamentParticipant) {
       emitTournamentUpdate(tournamentRuntime, {
@@ -1604,12 +1679,84 @@ function resumeGame(io, socket) {
   socket.data.roomId = room.id;
   socket.data.color = seat.color;
 
-  socket.emit('match_found', { roomId: room.id, yourColor: seat.color });
+  socket.emit('match_found', {
+    roomId: room.id,
+    yourColor: seat.color,
+    tournament: room.tournamentMatch ? {
+      id: room.tournamentMatch.tournamentId,
+      round: room.tournamentMatch.roundNo,
+      match: room.tournamentMatch.matchNo,
+      prizePool: room.tournamentMatch.prizePool,
+    } : undefined,
+    wager: room.match ? {
+      bet: room.match.bet,
+      feePerPlayer: room.match.feePerPlayer,
+      payout: room.match.payout,
+    } : null,
+  });
   // If it is their turn, give them a human timer again instead of the bot's
   if (room.game.turn === seat.color && ['roll', 'bonus-roll', 'capture-roll', 'move'].includes(room.phase)) {
     schedule(io, room);
   }
   broadcast(io, room);
+}
+
+function findHumanTournamentParticipant(runtime, playerId) {
+  if (!playerId) return null;
+  return runtime?.participants.find((entry) =>
+    !entry.isBot && String(entry.playerId) === String(playerId)
+  ) || null;
+}
+
+function watchTournamentMatch(io, socket, {
+  tournamentId,
+  roundNo,
+  matchNo,
+} = {}) {
+  const id = String(tournamentId || '');
+  const round = Number(roundNo);
+  const match = Number(matchNo);
+  const runtime = tournaments.get(id);
+  if (!runtime || runtime.status !== 'IN_PROGRESS') {
+    socket.emit('tournament_watch_error', 'This tournament is no longer active. Refresh the tournament page.');
+    return;
+  }
+  const participant = findHumanTournamentParticipant(runtime, socket.data.playerId);
+  if (!participant) {
+    socket.emit('tournament_watch_error', 'You can only watch matches in your tournament.');
+    return;
+  }
+  if (socket.data.roomId) {
+    socket.emit('tournament_watch_error', 'Leave your current match before watching another.');
+    return;
+  }
+  if (!Number.isInteger(round) || round < 1 || round > 3 || !Number.isInteger(match) || match < 1) {
+    socket.emit('tournament_watch_error', 'That tournament match is not available to watch.');
+    return;
+  }
+
+  const room = [...rooms.values()].find((candidate) =>
+    candidate.tournamentMatch?.tournamentId === id
+    && candidate.tournamentMatch.roundNo === round
+    && candidate.tournamentMatch.matchNo === match
+    && !candidate.game.winner
+    && candidate.phase !== 'over'
+  );
+  if (!room) {
+    socket.emit('tournament_watch_error', 'That match is no longer live.');
+    return;
+  }
+  if (room.seats.some((seat) => String(seat.playerId) === String(socket.data.playerId))) {
+    socket.emit('tournament_watch_error', 'Open your own match to play.');
+    return;
+  }
+
+  const previousRoom = rooms.get(socket.data.spectatingRoomId);
+  previousRoom?.spectators?.delete(socket.id);
+  room.spectators.add(socket.id);
+  socket.data.spectatingRoomId = room.id;
+  socket.emit('tournament_watch_started', { tournamentId: id, roundNo: round, matchNo: match });
+  socket.emit('game_update', publicState(room, socket.id));
 }
 
 // ---------- Socket events ----------
@@ -1619,9 +1766,15 @@ function registerHandlers(io, socket) {
   socket.data.clientId = String(socket.handshake.auth?.clientId || '').slice(0, 64) || null;
 
   socket.on('resume_game', () => resumeGame(io, socket));
+  socket.on('watch_tournament_match', (match) => watchTournamentMatch(io, socket, match));
+  socket.on('stop_watching_tournament_match', () => {
+    const room = rooms.get(socket.data.spectatingRoomId);
+    room?.spectators?.delete(socket.id);
+    socket.data.spectatingRoomId = null;
+  });
 
   socket.on('find_match', ({ name, requestId, queueType, bet } = {}) => {
-    if (socket.data.roomId) return;
+    if (socket.data.roomId || socket.data.spectatingRoomId) return;
     if (
       !socket.data.playerId
       || !socket.data.masterId
@@ -1873,6 +2026,9 @@ function registerHandlers(io, socket) {
   socket.on('disconnect', () => {
     leaveLobby(io, socket);
     removeFromQueues(io, socket);
+    const watchedRoom = rooms.get(socket.data.spectatingRoomId);
+    watchedRoom?.spectators?.delete(socket.id);
+    socket.data.spectatingRoomId = null;
     const clientId = String(socket.data.clientId || '');
     const tournamentRef = clientId ? tournamentByClientId.get(clientId) : null;
     const tournamentRuntime = tournamentRef && tournaments.get(tournamentRef.tournamentId);
@@ -1891,5 +2047,5 @@ module.exports = {
   rollDiceForCurrentPlayer, takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE,
   pickBotLevel, canStartPrivateRoom, isPrivateRoomStarted, createRoom, advanceTurn,
   isTournamentGroupReady, findReadyTournamentGroup,
-  recordHardForcedCapture,
+  recordHardForcedCapture, findHumanTournamentParticipant, emitTournamentUpdate,
 };
