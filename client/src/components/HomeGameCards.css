@@ -1,5 +1,5 @@
 .hg-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding-top:22px}
-.hg-private-mode-cards{padding-top:16px}
+.hg-private-mode-cards{grid-template-columns:repeat(2,minmax(0,1fr));padding-top:16px}
 .hg-card{position:relative;height:112px;padding:0;border:0;border-radius:16px;cursor:pointer;color:#fff;
   font-family:'Lilita One',sans-serif;-webkit-tap-highlight-color:transparent;
   box-shadow:0 4px 0 rgba(0,0,0,.35),inset 0 2px 0 rgba(255,255,255,.35)}
