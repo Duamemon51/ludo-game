@@ -27,6 +27,16 @@ function toAbs(color, rel) {
   return (START[color] + rel) % 52;
 }
 
+function isDoubleAt(state, color, abs) {
+  const tokens = state.tokens[color];
+  if (!tokens) return false;
+  return tokens.filter((position) =>
+    position >= 0
+    && position <= LAST_TRACK
+    && toAbs(color, position) === abs
+  ).length >= 2;
+}
+
 function getMoveDestination(state, color, from, dice) {
   if (from === BASE) return 0;
   const to = from + dice;
@@ -63,7 +73,10 @@ function applyMove(state, color, tokenIdx, dice) {
   const captured = [];
   if (to <= LAST_TRACK) {
     const abs = toAbs(color, to);
-    if (!SAFE.includes(abs)) {
+    const blockedByDouble = state.colors.some((other) =>
+      other !== color && isDoubleAt(state, other, abs)
+    );
+    if (!SAFE.includes(abs) && !blockedByDouble) {
       for (const other of state.colors) {
         if (other === color) continue;
         state.tokens[other].forEach((p, i) => {
@@ -95,5 +108,5 @@ function nextTurn(state, extraTurn) {
 module.exports = {
   COLORS, START, SAFE, BASE, LAST_TRACK, FINISH,
   CAPTURES_TO_UNLOCK_HOME,
-  createGame, rollDice, toAbs, getMoveDestination, getValidMoves, applyMove, nextTurn,
+  createGame, rollDice, toAbs, isDoubleAt, getMoveDestination, getValidMoves, applyMove, nextTurn,
 };

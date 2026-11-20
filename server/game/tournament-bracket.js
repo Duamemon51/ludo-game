@@ -8,11 +8,7 @@ function allocateBotLevels(humanCount) {
   }
 
   const botCount = TOURNAMENT_SIZE - humanCount;
-  const levels = ['expert'];
-  const hardCount = botCount === 2 ? 1 : Math.min(2, Math.max(0, botCount - 2));
-  for (let count = 0; count < hardCount; count += 1) levels.push('hard');
-  while (levels.length < botCount) levels.push('medium');
-  return levels;
+  return ['expert', ...Array(botCount - 1).fill('medium')];
 }
 
 function buildParticipants(humans, makeBot, random = Math.random) {

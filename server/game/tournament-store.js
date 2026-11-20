@@ -117,7 +117,7 @@ async function createTournament({ id, entryFee, participants }) {
       entryFee,
       feePercent,
       false,
-      humanIds.length
+      participants.length
     );
     const masterId = accounts[0].master_id;
     await connection.execute(

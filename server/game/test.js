@@ -20,6 +20,18 @@ assert.strictEqual(r.captured.length, 0);
 assert.strictEqual(s.tokens.yellow[0], 34);
 console.log('PASS: safe square protects');
 
+// A double is a blockade: landing there never captures either token.
+s = engine.createGame(['red', 'yellow']);
+s.tokens.red = [2, 5, -1, -1];
+engine.applyMove(s, 'red', 0, 3); // red forms a double on absolute square 5
+s.tokens.yellow[0] = 30; // yellow is one square away
+r = engine.applyMove(s, 'yellow', 0, 1);
+assert.deepStrictEqual(r.captured, []);
+assert.deepStrictEqual(s.tokens.red.slice(0, 2), [5, 5]);
+assert.strictEqual(s.captures.yellow, 0);
+assert.strictEqual(r.extraTurn, false);
+console.log('PASS: opponent doubles block captures');
+
 // Test 3: leaving base needs a 6
 s = engine.createGame(['red', 'yellow']);
 assert.deepStrictEqual(engine.getValidMoves(s, 'red', 3), []);

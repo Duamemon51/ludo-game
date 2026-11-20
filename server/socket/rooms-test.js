@@ -205,7 +205,18 @@ emitTournamentUpdate(tournamentUpdateRuntime, {
 });
 assert.strictEqual(tournamentUpdateEvents.get('winner').length, 1);
 assert.strictEqual(tournamentUpdateEvents.get('previous-loser').length, 1);
-console.log('PASS: elimination popups are sent only to the newly eliminated player');
+emitTournamentUpdate(tournamentUpdateRuntime, {
+  status: 'COMPLETED',
+  onlySlots: [1],
+  message: 'You are the tournament champion.',
+});
+assert.strictEqual(tournamentUpdateEvents.get('winner').length, 2);
+assert.strictEqual(
+  tournamentUpdateEvents.get('previous-loser').length,
+  1,
+  'only the tournament champion should receive the champion popup'
+);
+console.log('PASS: tournament elimination and champion popups are recipient-specific');
 const disconnectedClientId = 'resuming-tournament-client';
 const disconnectedSocket = makeLobbyTestSocket(
   'resuming-tournament-before-close',

@@ -5,6 +5,7 @@ const {
   FINISH,
   CAPTURES_TO_UNLOCK_HOME,
   toAbs,
+  isDoubleAt,
   getMoveDestination,
   getValidMoves,
   applyMove,
@@ -80,7 +81,7 @@ function isThreatened(state, color, rel) {
 
   const abs = toAbs(color, rel);
 
-  if (SAFE.includes(abs)) return false;
+  if (SAFE.includes(abs) || isDoubleAt(state, color, abs)) return false;
 
   for (const other of state.colors) {
     if (other === color) continue;
@@ -105,7 +106,10 @@ function captureValueAt(state, color, to) {
 
   const abs = toAbs(color, to);
 
-  if (SAFE.includes(abs)) return 0;
+  if (
+    SAFE.includes(abs)
+    || state.colors.some((other) => other !== color && isDoubleAt(state, other, abs))
+  ) return 0;
 
   let value = 0;
 
@@ -228,7 +232,7 @@ function hitRisk(state, color, rel) {
 
   const abs = toAbs(color, rel);
 
-  if (SAFE.includes(abs)) return 0;
+  if (SAFE.includes(abs) || isDoubleAt(state, color, abs)) return 0;
 
   const hits = new Set();
 
@@ -287,7 +291,7 @@ function captureSetupValue(state, color, rel) {
       if (pos < 0 || pos > LAST_TRACK) continue;
 
       const target = toAbs(other, pos);
-      if (SAFE.includes(target)) continue;
+      if (SAFE.includes(target) || isDoubleAt(state, other, target)) continue;
 
       const distance = (target - abs + 52) % 52;
       if (distance >= 1 && distance <= 6) {
