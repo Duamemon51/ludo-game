@@ -9,6 +9,7 @@ import MatchmakingScreen from './components/MatchmakingScreen';
 import TournamentBracketScreen from './components/TournamentBracketScreen';
 import LoginScreen from './components/LoginScreen';
 import GameTopBar from './components/GameTopBar';
+import DiceLoader from './components/DiceLoader';
 import { signIn } from './authApi';
 
 const MasterDashboard = lazy(() => import('./components/MasterDashboard'));
@@ -103,6 +104,9 @@ export default function App() {
   const [showReconnectOverlay, setShowReconnectOverlay] = useState(false);
   const [status, setStatus] = useState('idle'); // idle | queued | bracket | lobby | playing | finishing | over
   const [authSession, setAuthSession] = useState(readAuthSession);
+  const [isResumingGame, setIsResumingGame] = useState(
+    () => authSession?.account.role === 'PLAYER'
+  );
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [homeView, setHomeView] = useState(() => (
@@ -155,6 +159,12 @@ export default function App() {
     mediaQuery.addEventListener('change', updateLayout);
     return () => mediaQuery.removeEventListener('change', updateLayout);
   }, []);
+
+  useEffect(() => {
+    if (!isResumingGame) return undefined;
+    const timer = setTimeout(() => setIsResumingGame(false), 10000);
+    return () => clearTimeout(timer);
+  }, [isResumingGame]);
 
   useEffect(() => {
     const clickSound = new Audio('/sounds/piece-move.mp3');
@@ -236,6 +246,7 @@ export default function App() {
 
   const signOut = () => {
     setReturnToTournament(false);
+    setIsResumingGame(false);
     localStorage.removeItem(AUTH_STORAGE_KEY);
     socket.disconnect();
     socket.connect();
@@ -260,11 +271,12 @@ export default function App() {
     };
     const scheduleReconnectNotice = () => {
       clearReconnectNotice();
-      if (document.visibilityState !== 'visible') return;
+      if (document.visibilityState !== 'visible' || navigator.onLine) return;
       reconnectNoticeTimerRef.current = setTimeout(() => {
         reconnectNoticeTimerRef.current = null;
         if (
           document.visibilityState === 'visible'
+          && !navigator.onLine
           && ['playing', 'finishing', 'over', 'spectating'].includes(statusRef.current)
         ) {
           setShowReconnectOverlay(true);
@@ -276,26 +288,28 @@ export default function App() {
       setShowReconnectOverlay(false);
       setConnected(true);
       if (spectatorMatchRef.current) {
+        setIsResumingGame(false);
         socket.emit('watch_tournament_match', spectatorMatchRef.current);
       } else {
+        if (readAuthSession()?.account.role === 'PLAYER') setIsResumingGame(true);
         socket.emit('resume_game');
       }
     };
     const onDisconnect = () => {
       setShowReconnectOverlay(false);
       setConnected(false); // keep the board on screen while reconnecting
-      scheduleReconnectNotice();
+      if (!navigator.onLine) scheduleReconnectNotice();
+      else clearReconnectNotice();
     };
     const onOffline = () => {
-      setConnected(socket.connected);
-      if (!socket.connected) scheduleReconnectNotice();
+      setConnected(false);
+      scheduleReconnectNotice();
     };
     const onOnline = () => {
+      clearReconnectNotice();
+      setShowReconnectOverlay(false);
       setConnected(socket.connected);
-      if (!socket.connected) {
-        socket.connect();
-        scheduleReconnectNotice();
-      }
+      if (!socket.connected) socket.connect();
     };
     const onPageVisible = () => {
       if (document.visibilityState !== 'visible') {
@@ -303,9 +317,13 @@ export default function App() {
         setShowReconnectOverlay(false);
         return;
       }
+      if (!navigator.onLine) {
+        setConnected(false);
+        scheduleReconnectNotice();
+        return;
+      }
       if (!socket.connected) {
         socket.connect();
-        scheduleReconnectNotice();
       } else {
         clearReconnectNotice();
         setShowReconnectOverlay(false);
@@ -313,6 +331,7 @@ export default function App() {
       }
     };
     const onNoGame = () => {
+      setIsResumingGame(false);
       if (statusRef.current === 'over' || statusRef.current === 'finishing') return;
       if (statusRef.current === 'playing') showNotice('Your game has ended.');
       setStatus('idle');
@@ -396,6 +415,7 @@ export default function App() {
       showNotice(message);
     };
     const onTournamentUpdate = ({ message, status: tournamentStatus, round }) => {
+      setIsResumingGame(false);
       if (!message) return;
       window.dispatchEvent(new Event('player:refresh'));
       showNotice({
@@ -412,6 +432,7 @@ export default function App() {
     };
     const onUpdate = (state) => {
       setConnected(true);
+      setIsResumingGame(false);
       setGame({
         ...state,
         localDeadline: state.timeLeftMs != null ? Date.now() + state.timeLeftMs : null,
@@ -829,10 +850,18 @@ export default function App() {
       )}
 
       {!connected && !inGame && homeView !== 'master' && homeView !== 'login' && homeView !== 'menu' && <div className="card">Connecting to server...</div>}
-      {!connected && inGame && showReconnectOverlay && (
+      {!connected && !navigator.onLine && inGame && showReconnectOverlay && (
         <div className="reconnect-overlay">
           <section className="reconnect-card" role="alertdialog" aria-modal="true" aria-labelledby="reconnect-title">
-            <strong id="reconnect-title">Connection lost. Reconnecting…</strong>
+            <strong id="reconnect-title">Internet connection lost</strong>
+            <DiceLoader label="Trying to reconnect..." />
+          </section>
+        </div>
+      )}
+      {isResumingGame && homeView === 'menu' && (
+        <div className="reconnect-overlay resume-loader-overlay">
+          <section className="reconnect-card resume-loader-card">
+            <DiceLoader label="Restoring your game" showLabel={false} />
           </section>
         </div>
       )}
@@ -861,6 +890,7 @@ export default function App() {
           token={authSession?.token}
           onSignOut={signOut}
           connected={connected}
+          isResumingGame={isResumingGame}
         />
       )}
 
@@ -992,6 +1022,10 @@ export default function App() {
                   : `Lost: ${gameResult.wager.bet.toLocaleString()} credits`}
               </p>
             )}
+            {game.winner === myColor
+              && !gameResult?.cancelled
+              && (gameResult?.wager || gameResult?.tournament?.round === 3)
+              && <DiceLoader label="Updating account balance" showLabel={false} />}
           </div>
         </div>
       )}

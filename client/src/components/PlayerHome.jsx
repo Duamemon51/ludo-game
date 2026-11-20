@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { playerRequest, PLAYER_SERVER_UNAVAILABLE } from '../playerApi';
 import HomeGameCards from './HomeGameCards';
 import PrivateTable from './PrivateTable';
+import DiceLoader from './DiceLoader';
 
 const PAWN_COLORS = ['#e53935', '#3fa34d', '#fcc419', '#1e88e5'];
 const TOURNAMENT = { id: 'quick-1v1', name: 'Quick 1 vs 1' };
@@ -201,13 +202,21 @@ function resizeImage(file, size) {
 export default function PlayerHome({
   name, onNameChange, onAvatarChange, onFindMatch, onCreateRoom, joinCode,
   onJoinCodeChange, onJoinRoom, onWatchTournamentMatch, initialPage = 'home',
-  token, onSignOut, connected = true,
+  token, onSignOut, connected = true, isResumingGame = false,
 }) {
   const [page, setPage] = useState(initialPage);
   const [bet, setBet] = useState(300);
   const [tournamentBet, setTournamentBet] = useState(300);
   const [profile, setProfile] = useState(null);
-  const [wallet, setWallet] = useState({ balance: 0, heldAmount: 0, availableBalance: 0, ledger: [], requests: [] });
+  const [wallet, setWallet] = useState({
+    balance: 0,
+    heldAmount: 0,
+    availableBalance: 0,
+    netGameWinnings: 0,
+    withdrawableWinnings: 0,
+    ledger: [],
+    requests: [],
+  });
   const [matches, setMatches] = useState([]);
   const [tournament, setTournament] = useState({ enabled: false, entryFee: 300, feePercent: 10, mode: '8-player knockout', current: null });
   const [loading, setLoading] = useState(true);
@@ -245,6 +254,8 @@ export default function PlayerHome({
   }, [name, onAvatarChange]);
   const balance = wallet.balance;
   const availableBalance = wallet.availableBalance;
+  const netGameWinnings = Number(wallet.netGameWinnings || 0);
+  const withdrawableWinnings = Number(wallet.withdrawableWinnings || 0);
   const active = profile?.status === 'Active';
   const journeyPageCount = Math.max(1, Math.ceil(matches.length / journeyPageSize));
   const currentJourneyPage = Math.min(journeyPage, journeyPageCount);
@@ -489,6 +500,13 @@ export default function PlayerHome({
       setMessage('Minimum withdrawal amount is 2000 credits.');
       return;
     }
+    if (
+      walletRequestType === 'withdrawal'
+      && Number(withdrawAmount) > withdrawableWinnings
+    ) {
+      setMessage(`You can withdraw up to ${withdrawableWinnings.toLocaleString()} credits in available game winnings.`);
+      return;
+    }
     setRequestingWalletRequest(true);
     setMessage('');
     try {
@@ -594,8 +612,9 @@ export default function PlayerHome({
         .ph-sheet { display: flex; min-width: 0; flex-direction: column; gap: 12px; border-radius: 28px; padding: 22px; color: var(--player-ink); background: repeating-linear-gradient(90deg, #00000017 0 1px, transparent 1px 6px, #ffffff0d 6px 7px, transparent 7px 13px), linear-gradient(180deg, #b36a2f, #8a4d20 45%, #6b3a17); box-shadow: inset 0 3px 0 #ffffff4d, inset 0 0 0 1.5px #ffdc8259, 0 14px 35px #0008; }
         .ph-status-mobile { display: none; }
         .ph-server-warning { margin-top: 10px; border-radius: 12px; padding: 10px 13px; color: #ffe0ad; background: #ad652c55; font-size: 12px; }
+        .ph-loading-overlay { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px; background: #160b20c9; backdrop-filter: blur(5px); }
         .ph-offline-overlay { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px; background: #160b20c9; backdrop-filter: blur(5px); }
-        .ph-offline-card { width: min(100%, 320px); padding: 24px; border: 1px solid #ffffff45; border-radius: 20px; color: #fff; background: linear-gradient(160deg, #55236f, #291038); box-shadow: 0 12px 35px #0009, inset 0 1px #ffffff30; text-align: center; }
+        .ph-offline-card { display: grid; justify-items: center; gap: 12px; width: auto; padding: 0; border: 0; border-radius: 0; color: #fff; background: transparent; box-shadow: none; text-align: center; }
         .ph-offline-card strong { display: block; font-size: 19px; }
         .ph-nav { display: flex; gap: 4px; padding: 4px; border-radius: 15px; background: #281406a6; box-shadow: inset 0 3px 6px #0008; }
         .ph-nav button { flex: 1; min-width: 0; border: 0; border-radius: 11px; padding: 9px 5px; color: #ffe9b0b3; background: transparent; font-family: 'Lilita One', sans-serif; font-size: 13px; }
@@ -1255,7 +1274,6 @@ export default function PlayerHome({
           <div className={`ph-status ph-status-mobile${active ? '' : ' blocked'}`} role="status">
             <i /> Account: {profile?.status || 'Loading'}
           </div>
-          {loading && <div className="ph-server-warning" role="status">Loading your account, wallet and history…</div>}
           {loadError && (connected || loadError !== PLAYER_SERVER_UNAVAILABLE) && <div className="ph-server-warning" role="alert">{loadError} <button type="button" className="ph-icon-btn ph-icon-sm" onClick={refreshPlayerData} aria-label="Retry" title="Retry"><Icon>{ICON_REFRESH}</Icon></button></div>}
           <nav className="ph-nav" aria-label="Player menu">
             {[
@@ -1572,9 +1590,12 @@ export default function PlayerHome({
               </div>
               <div className="ph-actions2">
                 <button type="button" className="ph-primary" disabled={loading || !active} onClick={() => openWalletRequest('deposit')}><Icon>{ICON_DOWN}</Icon>Deposit</button>
-                <button type="button" className="ph-primary" disabled={loading || !active || availableBalance < 2000} onClick={() => openWalletRequest('withdrawal')}><Icon>{ICON_UP}</Icon>Withdraw</button>
+                <button type="button" className="ph-primary" disabled={loading || !active || withdrawableWinnings < 2000} onClick={() => openWalletRequest('withdrawal')}><Icon>{ICON_UP}</Icon>Withdraw</button>
               </div>
-              <p className="ph-hint">Deposits are approved by your Master. Pending withdrawals are held from your available balance.</p>
+              <p className="ph-hint">
+                Deposits are approved by your Master. Withdrawals unlock after 2,000 credits in net game winnings;
+                deposited funds cannot be withdrawn. Available game winnings: {withdrawableWinnings.toLocaleString()} credits.
+              </p>
               {!active && <div className="ph-lock">Inactive accounts cannot request a withdrawal.</div>}
             </section>
           )}
@@ -1786,10 +1807,13 @@ export default function PlayerHome({
           <form className="ph-modal" onSubmit={submitWalletRequest}>
             <h2>Request {walletRequestType}</h2>
             <p>{walletRequestType === 'withdrawal'
-              ? `Minimum withdrawal: 2,000 credits · Available balance: ${availableBalance.toLocaleString()}`
+              ? `Minimum withdrawal: 2,000 credits · Net game winnings: ${netGameWinnings.toLocaleString()} · Available winnings: ${withdrawableWinnings.toLocaleString()}`
               : 'Your Master will review this request and add funds to your wallet if approved.'}</p>
             <label htmlFor="wallet-request-amount">Amount</label>
-            <input id="wallet-request-amount" type="number" min={walletRequestType === 'withdrawal' ? '2000' : '0.01'} step="0.01" max={walletRequestType === 'withdrawal' ? availableBalance : undefined} required value={withdrawAmount} onChange={(event) => setWithdrawAmount(event.target.value)} />
+            <input id="wallet-request-amount" type="number" min={walletRequestType === 'withdrawal' ? '2000' : '0.01'} step="0.01" max={walletRequestType === 'withdrawal' ? withdrawableWinnings : undefined} required value={withdrawAmount} onChange={(event) => setWithdrawAmount(event.target.value)} />
+            {message && walletRequestType === 'withdrawal' && (
+              <p className="ph-message" role="alert">{message}</p>
+            )}
             <div className="ph-modal-actions">
               <button className="ph-primary" type="submit" disabled={requestingWalletRequest}>{requestingWalletRequest ? 'Submitting…' : 'Submit request'}</button>
               <button type="button" className="ph-back" onClick={() => setWalletRequestOpen(false)}>Cancel</button>
@@ -1797,10 +1821,16 @@ export default function PlayerHome({
           </form>
         </div>
       )}
-      {!connected && (
+      {loading && !isResumingGame && (
+        <div className="ph-loading-overlay">
+          <DiceLoader label="Loading account data" showLabel={false} />
+        </div>
+      )}
+      {!connected && !navigator.onLine && !isResumingGame && (
         <div className="ph-offline-overlay">
           <section className="ph-offline-card" role="alertdialog" aria-modal="true" aria-labelledby="ph-offline-title">
             <strong id="ph-offline-title">Connection lost. Reconnecting…</strong>
+            <DiceLoader label="Trying to reconnect" showLabel={false} />
           </section>
         </div>
       )}
