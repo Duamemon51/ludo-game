@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { randomBytes } = require('node:crypto');
 const { pool, transaction } = require('../db/pool');
+const { minimumBetFromSetting } = require('../game/wager');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_AMOUNT = 999999999999.99;
@@ -642,7 +643,7 @@ async function getSettings(req, res, next) {
     const [rows] = await pool.execute('SELECT setting_key, setting_value FROM platform_settings');
     const values = Object.fromEntries(rows.map((row) => [row.setting_key, row.setting_value]));
     res.json({
-      minimumBet: Number(values.minimum_bet ?? 300),
+      minimumBet: minimumBetFromSetting(values.minimum_bet),
       feePercent: Number(values.platform_fee_percent ?? 10),
       tournamentEnabled: values.tournament_enabled === 'true',
       tournamentEntry: Number(values.tournament_entry ?? 300),
@@ -658,6 +659,7 @@ async function putSettings(req, res, next) {
     const feePercent = amount(req.body?.feePercent, 'Platform fee', true);
     const tournamentEntry = amount(req.body?.tournamentEntry, 'Tournament entry', true);
     const tournamentEnabled = req.body?.tournamentEnabled;
+    if (minimumBet < 30) throw new HttpError(400, 'Minimum bet cannot be less than 30 rupees.');
     if (feePercent > 100) throw new HttpError(400, 'Platform fee cannot exceed 100%.');
     if (typeof tournamentEnabled !== 'boolean') throw new HttpError(400, 'Tournament enabled must be true or false.');
 

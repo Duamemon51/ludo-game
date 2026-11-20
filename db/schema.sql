@@ -230,7 +230,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 INSERT INTO platform_settings (setting_key, setting_value)
 VALUES
-  ('minimum_bet', '300'),
+  ('minimum_bet', '30'),
   ('platform_fee_percent', '10'),
   ('tournament_enabled', 'true'),
   ('tournament_entry', '300')

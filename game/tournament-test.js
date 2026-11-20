@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { calculateWager } = require('./wager');
+const { calculateWager, minimumBetFromSetting } = require('./wager');
 const {
   allocateBotLevels,
   buildParticipants,
@@ -13,6 +13,12 @@ const {
   TournamentError,
 } = require('./tournament-store');
 const { pool } = require('../db/pool');
+
+assert.equal(minimumBetFromSetting('300'), 30);
+assert.equal(minimumBetFromSetting('100'), 100);
+assert.equal(minimumBetFromSetting('70'), 30);
+assert.equal(minimumBetFromSetting(undefined), 30);
+console.log('PASS: legacy minimum bet settings now resolve to 30');
 
 assert.deepEqual(allocateBotLevels(7), ['expert']);
 assert.deepEqual(allocateBotLevels(6), ['expert', 'medium']);

@@ -1,6 +1,9 @@
 const { pool, transaction } = require('../db/pool');
-const { calculateWager } = require('./wager');
+const { calculateWager, minimumBetFromSetting } = require('./wager');
 const { createRoundPairs, nextRoundMatches } = require('./tournament-bracket');
+
+const MIN_BET = 30;
+const MAX_BET = 5000;
 
 class TournamentError extends Error {
   constructor(message) {
@@ -39,7 +42,7 @@ async function createTournament({ id, entryFee, participants }) {
   if (humanIds.some((playerId) => !playerId) || new Set(humanIds).size !== humanIds.length) {
     throw new TournamentError('Each tournament player must be signed in only once.');
   }
-  if (!Number.isSafeInteger(entryFee) || entryFee <= 0 || entryFee > 5000) {
+  if (!Number.isSafeInteger(entryFee) || entryFee < MIN_BET || entryFee > MAX_BET) {
     throw new TournamentError('Choose a valid tournament entry amount.');
   }
 
@@ -49,13 +52,13 @@ async function createTournament({ id, entryFee, participants }) {
        WHERE setting_key IN ('minimum_bet', 'platform_fee_percent', 'tournament_enabled')`
     );
     const values = Object.fromEntries(settings.map((row) => [row.setting_key, row.setting_value]));
-    const minimumBet = Number(values.minimum_bet ?? 300);
+    const minimumBet = minimumBetFromSetting(values.minimum_bet);
     const feePercent = Number(values.platform_fee_percent ?? 10);
     if (values.tournament_enabled !== 'true') {
       throw new TournamentError('Tournament matchmaking is currently unavailable.');
     }
     if (!Number.isFinite(minimumBet) || entryFee < minimumBet) {
-      throw new TournamentError(`The minimum bet is ${minimumBet} credits.`);
+      throw new TournamentError(`The minimum bet is ${minimumBet} rupees.`);
     }
     if (!Number.isFinite(feePercent) || feePercent < 0 || feePercent > 100) {
       throw new TournamentError('The platform fee is not configured correctly.');
