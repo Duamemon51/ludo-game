@@ -1,8 +1,17 @@
 const { transaction } = require('../db/pool');
 
+const MIN_BET = 30;
 const MAX_BET = 5000;
 const WINNING_ALERT_THRESHOLD = 1500;
 const WITHDRAWAL_MINIMUM = 2000;
+const LEGACY_DEFAULT_MIN_BETS = new Set([70, 300]);
+
+function minimumBetFromSetting(value) {
+  const minimumBet = Number(value ?? MIN_BET);
+  if (LEGACY_DEFAULT_MIN_BETS.has(minimumBet)) return MIN_BET;
+  return Math.max(MIN_BET, minimumBet);
+}
+
 class WagerError extends Error {
   constructor(message) {
     super(message);
@@ -55,10 +64,10 @@ async function createWageredMatch(
        WHERE setting_key IN ('minimum_bet', 'platform_fee_percent', 'tournament_enabled')`
     );
     const values = Object.fromEntries(settings.map((row) => [row.setting_key, row.setting_value]));
-    const minimumBet = Number(values.minimum_bet ?? 300);
+    const minimumBet = minimumBetFromSetting(values.minimum_bet);
     const feePercent = Number(values.platform_fee_percent ?? 10);
     if (!Number.isFinite(minimumBet) || bet < minimumBet) {
-      throw new WagerError(`The minimum bet is ${minimumBet} credits.`);
+      throw new WagerError(`The minimum bet is ${minimumBet} rupees.`);
     }
     if (!Number.isFinite(feePercent) || feePercent < 0 || feePercent > 100) {
       throw new WagerError('The platform fee is not configured correctly.');
@@ -296,6 +305,7 @@ async function refundWageredMatch(matchId) {
 
 module.exports = {
   WagerError,
+  minimumBetFromSetting,
   calculateWager,
   createWageredMatch,
   settleWageredMatch,

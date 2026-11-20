@@ -28,6 +28,7 @@ const MOVE_SETTLE_MS = 350;
 const MAX_MISSED = 1;
 const RECONNECT_MS = 60000; // how long an empty room waits for players to come back
 const GAME_CHAT_ENABLED = false;
+const MIN_BET = 30;
 const HUMAN_SIX_CHANCE = 0.20;
 const BOT_SIX_CHANCE = {
   expert: 0.65,
@@ -1812,8 +1813,8 @@ function registerHandlers(io, socket) {
       return;
     }
     const betAmount = Number(bet);
-    if (!Number.isSafeInteger(betAmount) || betAmount <= 0 || betAmount > 5000) {
-      socket.emit('match_error', 'Choose a valid bet from 300 to 5,000 credits.');
+    if (!Number.isSafeInteger(betAmount) || betAmount < MIN_BET || betAmount > 5000) {
+      socket.emit('match_error', 'Choose a valid bet from 70 to 5,000 rupees.');
       return;
     }
     if (activeTournamentParticipant(socket)) {
@@ -1880,8 +1881,8 @@ function registerHandlers(io, socket) {
       return socket.emit('lobby_error', 'Choose a 2-player or 4-player table.');
     }
     const betAmount = Number(bet);
-    if (!Number.isSafeInteger(betAmount) || betAmount < 300 || betAmount > 5000) {
-      return socket.emit('lobby_error', 'Choose a bet between 300 and 5,000 credits.');
+    if (!Number.isSafeInteger(betAmount) || betAmount < MIN_BET || betAmount > 5000) {
+      return socket.emit('lobby_error', 'Choose a bet between 30 and 5,000 rupees.');
     }
     removeFromQueues(io, socket);
     leaveLobby(io, socket);
