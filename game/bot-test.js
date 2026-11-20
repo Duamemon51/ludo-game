@@ -1,6 +1,6 @@
 const assert = require('assert');
 const engine = require('./engine');
-const { chooseMove, chooseTurnMove, evaluateExpertReply } = require('./bot');
+const { chooseMove, chooseTurnMove, evaluateExpertReply, scoreMove } = require('./bot');
 
 // Test 1: bot prefers a capture
 let s = engine.createGame(['red', 'yellow']);
@@ -8,6 +8,15 @@ s.tokens.red = [2, 20, -1, -1];
 s.tokens.yellow = [31, -1, -1, -1]; // yellow at abs 5
 assert.strictEqual(chooseMove(s, 'red', 3, 'hard'), 0);
 console.log('PASS: bot captures when it can');
+
+// Do not award the bot a capture bonus for landing on an opponent double.
+s = engine.createGame(['red', 'yellow']);
+s.tokens.red[0] = 2;
+s.tokens.yellow = [31, 31, -1, -1];
+const doubleCaptureScore = scoreMove(s, 'red', 0, 3);
+s.tokens.yellow = [-1, -1, -1, -1];
+assert.strictEqual(doubleCaptureScore, scoreMove(s, 'red', 0, 3));
+console.log('PASS: bot does not treat an opponent double as a capturable target');
 
 // Test 2: bot prefers reaching home
 s = engine.createGame(['red', 'yellow']);

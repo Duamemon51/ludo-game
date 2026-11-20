@@ -1246,12 +1246,9 @@ async function finishTournamentMatch(io, room, storeResult) {
     emitTournamentUpdate(runtime, {
       status: 'COMPLETED',
       roundNo: 3,
-      onlySlots: runtime.participants.filter((participant) => !participant.isBot)
-        .map((participant) => participant.slot),
+      onlySlots: champion && !champion.isBot ? [champion.slot] : [],
       payout: storeResult.payout,
-      message: storeResult.championIsBot
-        ? `${storeResult.championName} won the tournament.`
-        : `${storeResult.championName} is the tournament champion and wins ${storeResult.payout} credits.`,
+      message: `${storeResult.championName} is the tournament champion and wins ${storeResult.payout} credits.`,
     });
     for (const participant of runtime.participants) {
       if (participant.isBot) continue;

@@ -15,11 +15,16 @@ const {
 const { pool } = require('../db/pool');
 
 assert.deepEqual(allocateBotLevels(7), ['expert']);
-assert.deepEqual(allocateBotLevels(6), ['expert', 'hard']);
-assert.deepEqual(allocateBotLevels(5), ['expert', 'hard', 'medium']);
-assert.deepEqual(allocateBotLevels(4), ['expert', 'hard', 'hard', 'medium']);
-assert.deepEqual(allocateBotLevels(3), ['expert', 'hard', 'hard', 'medium', 'medium']);
-assert.deepEqual(allocateBotLevels(1), ['expert', 'hard', 'hard', 'medium', 'medium', 'medium', 'medium']);
+assert.deepEqual(allocateBotLevels(6), ['expert', 'medium']);
+assert.deepEqual(allocateBotLevels(5), ['expert', 'medium', 'medium']);
+assert.deepEqual(allocateBotLevels(4), ['expert', 'medium', 'medium', 'medium']);
+assert.deepEqual(allocateBotLevels(3), ['expert', 'medium', 'medium', 'medium', 'medium']);
+assert.deepEqual(allocateBotLevels(1), ['expert', 'medium', 'medium', 'medium', 'medium', 'medium', 'medium']);
+assert.ok(
+  [1, 2, 3, 4, 5, 6, 7].every((humanCount) =>
+    allocateBotLevels(humanCount).slice(1).every((level) => level === 'medium')
+  )
+);
 assert.throws(() => allocateBotLevels(0), RangeError);
 assert.throws(() => allocateBotLevels(8), RangeError);
 console.log('PASS: bot allocation keeps eight seats and always includes one expert');
@@ -102,7 +107,7 @@ console.log('PASS: round barrier waits for all results before creating the next 
 
 async function testParticipantValidation() {
   const invalidBotParticipants = participants.map((participant) => ({ ...participant }));
-  invalidBotParticipants.find((participant) => participant.isBot && participant.level === 'hard').level = 'unknown';
+  invalidBotParticipants.find((participant) => participant.isBot && participant.level !== 'expert').level = 'unknown';
   await assert.rejects(
     createTournament({ id: 'invalid-bot', entryFee: 300, participants: invalidBotParticipants }),
     TournamentError
@@ -152,4 +157,9 @@ assert.deepEqual(calculateWager(1000, 10, false, 5), {
   platformFee: 100,
   payout: 4900,
 });
-console.log('PASS: tournament uses the same one-entry fee and net payout as regular matches');
+assert.deepEqual(calculateWager(300, 10, false, 8), {
+  feePerPlayer: 30,
+  platformFee: 30,
+  payout: 2370,
+});
+console.log('PASS: tournament prize counts all eight bracket slots, including bot seats');
