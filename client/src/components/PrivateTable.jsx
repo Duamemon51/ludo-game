@@ -1,4 +1,5 @@
 import './HomeGameCards.css';
+import BetAmountInput, { MIN_BET, MAX_BET } from './BetAmountInput';
 
 const CSS = `
   .ph-private-table .ph-icon-btn { width: 32px; height: 32px; }
@@ -65,7 +66,6 @@ export default function PrivateTable({
   joinCode = '',
   bet,
   onBetChange,
-  betOptions,
   availableBalance,
   feePercent = 10,
   onJoinCodeChange,
@@ -75,10 +75,14 @@ export default function PrivateTable({
 }) {
   const canJoin =
     !loading && active && connected && joinCode.trim().length === CODE_LENGTH;
-  const feePerPlayer = Math.round((bet * feePercent / 100 + Number.EPSILON) * 100) / 100;
+  const betAmount = Number(bet);
+  const validBet = Number.isSafeInteger(betAmount)
+    && betAmount >= MIN_BET
+    && betAmount <= MAX_BET;
+  const feePerPlayer = Math.round((betAmount * feePercent / 100 + Number.EPSILON) * 100) / 100;
   const payoutFor = (playerCount) =>
-    Math.round((bet * playerCount - feePerPlayer + Number.EPSILON) * 100) / 100;
-  const canCreate = !loading && active && connected && bet <= availableBalance;
+    Math.round((betAmount * playerCount - feePerPlayer + Number.EPSILON) * 100) / 100;
+  const canCreate = !loading && active && connected && validBet && betAmount <= availableBalance;
 
   const handleCodeChange = (event) => {
     // Sirf letters/numbers allow karo, uppercase me
@@ -128,43 +132,15 @@ export default function PrivateTable({
           Winnings depend on the number of players who join.
         </p>
 
-        <div className="ph-bet-selector" role="group" aria-label="Private table bet amount">
-          <button
-            type="button"
-            className="ph-bet-step"
-            aria-label="Decrease bet"
-            disabled={bet === betOptions[0]}
-            onClick={() => {
-              const index = betOptions.indexOf(bet);
-              if (index > 0) onBetChange(betOptions[index - 1]);
-            }}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" /></svg>
-          </button>
-          <output
-            className={`ph-bet-value${bet > availableBalance ? ' unaffordable' : ''}`}
-            aria-live="polite"
-            aria-disabled={bet > availableBalance}
-          >
-            {bet.toLocaleString()} credits
-          </output>
-          <button
-            type="button"
-            className="ph-bet-step"
-            aria-label="Increase bet"
-            disabled={bet === betOptions[betOptions.length - 1]}
-            onClick={() => {
-              const index = betOptions.indexOf(bet);
-              if (index >= 0 && index < betOptions.length - 1) {
-                onBetChange(betOptions[index + 1]);
-              }
-            }}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" /></svg>
-          </button>
-        </div>
-        <div className="ph-bet-hint">
-          Bet per player · winner fee {feePercent}% · Available {availableBalance.toLocaleString()}
+        <BetAmountInput
+          id="private-bet-amount"
+          value={bet}
+          onChange={onBetChange}
+          hintId="private-bet-hint"
+          label="Bet per player"
+        />
+        <div id="private-bet-hint" className="ph-bet-hint">
+          Enter between 30 and 5,000 · Winner fee {feePercent}% · Available {availableBalance.toLocaleString()}
         </div>
 
         <div className="hg-cards hg-private-mode-cards">
@@ -175,7 +151,7 @@ export default function PrivateTable({
               className={`hg-card ${playerCount === 2 ? 'hg-duel' : 'hg-four-player'}`}
               disabled={!canCreate}
               aria-label={`Create a ${playerCount}-player private table`}
-              onClick={() => onCreateRoom(playerCount, bet)}
+              onClick={() => onCreateRoom(playerCount, betAmount)}
             >
               <span className="hg-icon"><TableIcon playerCount={playerCount} /></span>
               <span className="hg-text">

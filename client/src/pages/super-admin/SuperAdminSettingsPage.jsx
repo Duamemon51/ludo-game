@@ -55,9 +55,10 @@ export default function SuperAdminSettingsPage({ settings, setSettings, settings
             <div className="sa-form-fields">
               <NumberField
                 label="Minimum bet"
-                hint="The smallest stake a player can place on a match."
+                hint="The smallest stake a player can place on a match (at least 30 rupees)."
                 value={settings.minimumBet}
-                suffix="credits"
+                min={30}
+                suffix="rupees"
                 onChange={(value) => update('minimumBet', value)}
               />
               <NumberField

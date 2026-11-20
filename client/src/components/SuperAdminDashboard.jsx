@@ -5,7 +5,7 @@ import DashboardSidebar from './DashboardSidebar';
 import SuperAdminPageContent from '../pages/super-admin/SuperAdminPageContent';
 import './SuperAdminDashboard.css';
 
-const initialSettings = { minimumBet: 300, feePercent: 10, tournamentEnabled: true, tournamentEntry: 300 };
+const initialSettings = { minimumBet: 30, feePercent: 10, tournamentEnabled: true, tournamentEntry: 300 };
 const navItems = ['Dashboard', 'Masters', 'Wallet requests', 'Users', 'All matches', 'Money overview', 'Audit log', 'Settings'];
 const money = (value) => `${Number(value || 0).toLocaleString()} credits`;
 const initials = (value) => value.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase();

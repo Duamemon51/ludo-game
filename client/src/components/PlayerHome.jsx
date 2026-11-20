@@ -3,11 +3,11 @@ import { playerRequest, PLAYER_SERVER_UNAVAILABLE } from '../playerApi';
 import HomeGameCards from './HomeGameCards';
 import PrivateTable from './PrivateTable';
 import DiceLoader from './DiceLoader';
+import BetAmountInput, { MIN_BET, MAX_BET } from './BetAmountInput';
 
 const PAWN_COLORS = ['#e53935', '#3fa34d', '#fcc419', '#1e88e5'];
 const TOURNAMENT = { id: 'quick-1v1', name: 'Quick 1 vs 1' };
 const TOURNAMENT_SIZE = 8;
-const TOURNAMENT_BETS = [300, 500, 1000, 2000, 3000, 4000, 5000];
 const SHOW_TOURNAMENT_UI = true;
 
 function Icon({ children }) {
@@ -205,8 +205,8 @@ export default function PlayerHome({
   token, onSignOut, connected = true, isResumingGame = false,
 }) {
   const [page, setPage] = useState(initialPage);
-  const [bet, setBet] = useState(300);
-  const [tournamentBet, setTournamentBet] = useState(300);
+  const [bet, setBet] = useState(String(MIN_BET));
+  const [tournamentBet, setTournamentBet] = useState(String(MIN_BET));
   const [profile, setProfile] = useState(null);
   const [wallet, setWallet] = useState({
     balance: 0,
@@ -218,7 +218,7 @@ export default function PlayerHome({
     requests: [],
   });
   const [matches, setMatches] = useState([]);
-  const [tournament, setTournament] = useState({ enabled: false, entryFee: 300, feePercent: 10, mode: '8-player knockout', current: null });
+  const [tournament, setTournament] = useState({ enabled: false, entryFee: MIN_BET, feePercent: 10, mode: '8-player knockout', current: null });
   const [loading, setLoading] = useState(true);
   const [requestingWalletRequest, setRequestingWalletRequest] = useState(false);
   const [walletRequestOpen, setWalletRequestOpen] = useState(false);
@@ -309,19 +309,25 @@ export default function PlayerHome({
     (currentHistoryPage - 1) * historyPageSize,
     currentHistoryPage * historyPageSize
   );
-  const tournamentBetAmount = tournamentBet;
+  const tournamentBetAmount = Number(tournamentBet);
+  const betAmount = Number(bet);
+  const validBet = Number.isSafeInteger(betAmount)
+    && betAmount >= MIN_BET
+    && betAmount <= MAX_BET;
   const feePercent = Number(tournament.feePercent ?? 10);
   const roundCredits = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
-  const feePerPlayer = roundCredits((bet * feePercent) / 100);
+  const feePerPlayer = roundCredits((betAmount * feePercent) / 100);
   const matchPlatformFee = feePerPlayer;
-  const matchPayout = roundCredits((bet * 2) - matchPlatformFee);
+  const matchPayout = roundCredits((betAmount * 2) - matchPlatformFee);
   const tournamentPot = Number.isSafeInteger(tournamentBetAmount) && tournamentBetAmount >= 0
     ? tournamentBetAmount * TOURNAMENT_SIZE
     : 0;
   const tournamentFeePerPlayer = roundCredits((tournamentBetAmount * feePercent) / 100);
   const tournamentFee = tournamentFeePerPlayer;
   const tournamentPayout = Math.max(0, roundCredits(tournamentPot - tournamentFee));
-  const validTournamentBet = TOURNAMENT_BETS.includes(tournamentBetAmount)
+  const validTournamentBet = Number.isSafeInteger(tournamentBetAmount)
+    && tournamentBetAmount >= MIN_BET
+    && tournamentBetAmount <= MAX_BET
     && tournamentBetAmount <= availableBalance;
   const currentTournament = tournament.current;
   const currentRoundMatches = currentTournament?.matches?.filter(
@@ -636,9 +642,18 @@ export default function PlayerHome({
         .ph-bets { display: flex; gap: 10px; flex-wrap: wrap; margin: 18px 0; }
         .ph-bet { border: 1px solid #9a6f0080; border-radius: 10px; padding: 10px 18px; color: #3b2412; background: #fff9e6; }
         .ph-bet.selected { border-color: #a56b06; background: #ffe49a; }
-        .ph-bet-input { display: flex; align-items: center; gap: 10px; max-width: 280px; margin: 12px 0; color: #715637; font-weight: 700; }
-        .ph-bet-input input { width: 130px; min-height: 40px; box-sizing: border-box; border: 1px solid #9a6f0080; border-radius: 10px; padding: 8px 10px; color: #3b2412; background: #fff9e6; font: inherit; }
-        .ph-bet-input input:focus-visible { outline: 3px solid #d89a19; outline-offset: 2px; }
+        .ph-bet-label { display: block; width: min(100%, 300px); margin: 12px auto 6px; color: #715637; font-weight: 700; }
+        .ph-bet-stepper { display: grid; grid-template-columns: 42px minmax(0, 1fr) 42px; width: min(100%, 300px); height: 50px; margin: 0 auto 12px; overflow: hidden; border: 1px solid #aa8585; border-radius: 7px; background: #fff; }
+        .ph-bet-stepper-button { border: 0; color: #796868; background: #fff0ef; font: 700 20px system-ui, sans-serif; cursor: pointer; }
+        .ph-bet-stepper-button:first-child { border-right: 1px solid #aa8585; }
+        .ph-bet-stepper-button:last-child { border-left: 1px solid #aa8585; }
+        .ph-bet-stepper-button:disabled { opacity: .45; cursor: not-allowed; }
+        .ph-bet-stepper-value { min-width: 0; border: 0; border-radius: 0; padding: 8px 12px; color: #383838; background: #fff; font: 16px system-ui, sans-serif; }
+        .ph-bet-stepper-value:focus-visible { outline: 2px solid #d89a19; outline-offset: -2px; }
+        .ph-bet-presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; width: min(100%, 300px); margin: 0 auto 12px; }
+        .ph-bet-preset { min-width: 0; min-height: 36px; padding: 0 2px; border: 1px solid #c39729; border-radius: 8px; color: #55340b; background: linear-gradient(180deg, #fff9e6, #f3dfa9); font: 800 12px 'Baloo 2', system-ui, sans-serif; white-space: nowrap; cursor: pointer; }
+        .ph-bet-preset:hover { filter: brightness(1.05); }
+        .ph-bet-preset.selected { color: #4a3000; background: linear-gradient(180deg, #fff1a8, #fcc419 65%, #e0a000); box-shadow: inset 0 1px 0 #fff8, 0 2px 0 #9a6f00; }
         .ph-tournament-bet-content { width: min(100%, 420px); margin: 16px auto 0; color: #3b2412; }
         .ph-tournament-label { display: block; margin: 0 0 10px; color: #5e4322; font-size: 17px; font-weight: 800; text-align: center; }
         .ph-bet-selector { display: grid; grid-template-columns: 30px minmax(0, 1fr) 30px; align-items: center; gap: 10px; width: min(100%, 280px); margin: 0 auto 10px; }
@@ -1326,7 +1341,6 @@ export default function PlayerHome({
               joinCode={joinCode}
               bet={bet}
               onBetChange={setBet}
-              betOptions={TOURNAMENT_BETS}
               availableBalance={availableBalance}
               feePercent={feePercent}
               onJoinCodeChange={onJoinCodeChange}
@@ -1339,50 +1353,23 @@ export default function PlayerHome({
           {page === 'match' && (
             <section className="ph-panel">
               <PanelHead className="ph-close-only" title="Choose your bet" onBack={() => setPage('home')} closeOnly />
-              <p>Minimum bet is 300. The platform fee is {feePercent}% of the winner’s bet.</p>
-              <div className="ph-bet-selector" role="group" aria-label="Bet amount">
-                <button
-                  type="button"
-                  className="ph-bet-step"
-                  aria-label="Decrease bet"
-                  disabled={bet === TOURNAMENT_BETS[0]}
-                  onClick={() => {
-                    const index = TOURNAMENT_BETS.indexOf(bet);
-                    if (index > 0) setBet(TOURNAMENT_BETS[index - 1]);
-                  }}
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" /></svg>
-                </button>
-                <output
-                  className={`ph-bet-value${bet > availableBalance ? ' unaffordable' : ''}`}
-                  aria-live="polite"
-                  aria-disabled={bet > availableBalance}
-                >
-                  {bet.toLocaleString()} credits
-                </output>
-                <button
-                  type="button"
-                  className="ph-bet-step"
-                  aria-label="Increase bet"
-                  disabled={bet === TOURNAMENT_BETS[TOURNAMENT_BETS.length - 1]}
-                  onClick={() => {
-                    const index = TOURNAMENT_BETS.indexOf(bet);
-                    if (index >= 0 && index < TOURNAMENT_BETS.length - 1) {
-                      setBet(TOURNAMENT_BETS[index + 1]);
-                    }
-                  }}
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" /></svg>
-                </button>
+              <p>Choose your bet from 70 to 5,000 rupees. The platform fee is {feePercent}% of the winner’s bet.</p>
+              <BetAmountInput
+                id="match-bet-amount"
+                value={bet}
+                onChange={setBet}
+                hintId="match-bet-hint"
+              />
+              <div id="match-bet-hint" className="ph-bet-hint">
+                Enter a whole amount between 30 and 5,000 · Available {availableBalance.toLocaleString()}
               </div>
-              <div className="ph-bet-hint">Choose a bet from 300 to 5,000 credits</div>
               <div className="ph-prize-summary" aria-live="polite">
-                <div><span>Total pot</span><strong>{(bet * 2).toLocaleString()}</strong></div>
-                <div><span>Platform fee ({feePercent}%)</span><strong>{feePerPlayer.toLocaleString()}</strong></div>
+                <div><span>Total pot</span><strong>{(betAmount * 2).toLocaleString()}</strong></div>
+                <div><span>Platform fee</span><strong>{feePerPlayer.toLocaleString()}</strong></div>
                 <div className="ph-prize-winner"><span>Winner gets</span><strong>{matchPayout.toLocaleString()}</strong></div>
               </div>
               {!active && <div className="ph-lock">Your account is blocked. You cannot start a game.</div>}
-              <button type="button" className="ph-primary" disabled={loading || !active || !connected || bet < 300 || bet > availableBalance} onClick={() => onFindMatch(bet, 'normal')}>
+              <button type="button" className="ph-primary" disabled={loading || !active || !connected || !validBet || betAmount > availableBalance} onClick={() => onFindMatch(betAmount, 'normal')}>
                 Find opponent
               </button>
             </section>
@@ -1472,48 +1459,18 @@ export default function PlayerHome({
                 || isTournamentEliminated) && (
                 <div className="ph-grid">
                   <div className="ph-tournament-bet-content" key={TOURNAMENT.id}>
-                  <span className="ph-tournament-label">Select your bet</span>
-                  <div className="ph-bet-selector" role="group" aria-label="Tournament bet amount">
-                    <button
-                      type="button"
-                      className="ph-bet-step"
-                      aria-label="Decrease bet"
-                      disabled={tournamentBetAmount === TOURNAMENT_BETS[0]}
-                      onClick={() => {
-                        const index = TOURNAMENT_BETS.indexOf(tournamentBetAmount);
-                        if (index > 0) setTournamentBet(TOURNAMENT_BETS[index - 1]);
-                      }}
-                    >
-                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" /></svg>
-                    </button>
-                    <output
-                      className={`ph-bet-value${!validTournamentBet ? ' unaffordable' : ''}`}
-                      aria-live="polite"
-                      aria-disabled={!validTournamentBet}
-                    >
-                      {tournamentBetAmount.toLocaleString()} credits
-                    </output>
-                    <button
-                      type="button"
-                      className="ph-bet-step"
-                      aria-label="Increase bet"
-                      disabled={tournamentBetAmount === TOURNAMENT_BETS[TOURNAMENT_BETS.length - 1]}
-                      onClick={() => {
-                        const index = TOURNAMENT_BETS.indexOf(tournamentBetAmount);
-                        if (index >= 0 && index < TOURNAMENT_BETS.length - 1) {
-                          setTournamentBet(TOURNAMENT_BETS[index + 1]);
-                        }
-                      }}
-                    >
-                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" /></svg>
-                    </button>
-                  </div>
-                  <div className="ph-bet-hint">
-                    One-time entry · 300 to 5,000 credits
+                  <BetAmountInput
+                    id="tournament-bet-amount"
+                    value={tournamentBet}
+                    onChange={setTournamentBet}
+                    hintId="tournament-bet-hint"
+                  />
+                  <div id="tournament-bet-hint" className="ph-bet-hint">
+                    One-time entry · enter a whole amount between 30 and 5,000
                   </div>
                   <div className="ph-prize-summary" aria-live="polite">
                     <div><span>Maximum prize pool</span><strong>{tournamentPot.toLocaleString()}</strong></div>
-                    <div><span>Platform fee ({feePercent}% of entry)</span><strong>{tournamentFee.toLocaleString()}</strong></div>
+                    <div><span>Platform fee</span><strong>{tournamentFee.toLocaleString()}</strong></div>
                     <div className="ph-prize-winner"><span>You can win up to</span><strong>{tournamentPayout.toLocaleString()}</strong></div>
                   </div>
                   <button

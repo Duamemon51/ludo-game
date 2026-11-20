@@ -222,7 +222,7 @@ export default function HomeGameCards({
           <span className="hg-icon" aria-hidden="true"><DuelIcon /></span>
           <span className="hg-text">
             <strong>1 vs 1</strong>
-            <small>Min bet 300</small>
+            <small>Min bet 30</small>
           </span>
         </button>
         {showTournament && (
