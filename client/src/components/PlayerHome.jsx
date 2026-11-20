@@ -652,6 +652,9 @@ export default function PlayerHome({
         .ph-tournament h3 { margin: 0 0 8px; }
         .ph-tournament p { margin: 5px 0; font-size: 13px; }
         .ph-tournament button { margin-top: 10px; }
+        .ph-tournament-wait-strip { display: block; width: 100%; margin: 12px 0; border: 1px solid #d5a928; border-radius: 12px; padding: 12px 14px; color: #55340b; background: linear-gradient(180deg, #fff8df, #f3dfa9); font: inherit; font-weight: 700; text-align: left; cursor: pointer; }
+        .ph-tournament-wait-strip:hover { filter: brightness(1.04); }
+        .ph-tournament-wait-strip:focus-visible { outline: 3px solid #d89a19; outline-offset: 2px; }
         .ph-tournament-panel > p { margin: 6px 0; }
         .ph-tournament-panel .ph-grid { margin-top: 8px; }
         .ph-bracket-panel { margin-top: 12px; border: 1px solid #ead9aa; border-radius: 14px; padding: 14px; background: #fff9e9; }
@@ -1272,6 +1275,16 @@ export default function PlayerHome({
             <section className="ph-panel ph-panel-home">
               <h2>Choose your game</h2>
               <p>{SHOW_TOURNAMENT_UI ? 'Play one-on-one, create a private table or enter a tournament.' : 'Play one-on-one or create a private table.'}</p>
+
+              {isWaitingForTournament && (
+                <button
+                  type="button"
+                  className="ph-tournament-wait-strip"
+                  onClick={() => setPage('tournaments')}
+                >
+                  You're waiting for the next round. Open Tournaments to watch other matches.
+                </button>
+              )}
 
               <HomeGameCards
                 loading={loading}
