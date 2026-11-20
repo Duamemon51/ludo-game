@@ -68,9 +68,9 @@ for (const mode of [2, 4]) {
 }
 
 const invalidBetHost = makeLobbyTestSocket('invalid-bet-host', lobbyTestIo);
-invalidBetHost.handlers.create_room({ mode: 2, bet: 299, name: 'Host' });
+invalidBetHost.handlers.create_room({ mode: 2, bet: 29, name: 'Host' });
 assert.ok(invalidBetHost.emitted.some(({ event, payload }) =>
-  event === 'lobby_error' && payload === 'Choose a bet between 300 and 5,000 credits.'
+  event === 'lobby_error' && payload === 'Choose a bet between 30 and 5,000 rupees.'
 ));
 invalidBetHost.handlers.disconnect();
 

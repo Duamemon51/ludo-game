@@ -38,7 +38,7 @@ async function createWageredMatch(
   { botOpponent = false, playerCount = 2, botPlayers } = {}
 ) {
   if (!Number.isSafeInteger(bet) || bet <= 0 || bet > MAX_BET) {
-    throw new WagerError(`Bet must be between the minimum bet and ${MAX_BET} credits.`);
+    throw new WagerError(`Bet must be between ${MIN_BET} and ${MAX_BET} rupees.`);
   }
   const playerIds = players.map((player) => (
     player.playerId == null ? '' : String(player.playerId)

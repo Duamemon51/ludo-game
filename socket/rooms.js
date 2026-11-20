@@ -1814,7 +1814,7 @@ function registerHandlers(io, socket) {
     }
     const betAmount = Number(bet);
     if (!Number.isSafeInteger(betAmount) || betAmount < MIN_BET || betAmount > 5000) {
-      socket.emit('match_error', 'Choose a valid bet from 70 to 5,000 rupees.');
+      socket.emit('match_error', 'Choose a valid bet from 30 to 5,000 rupees.');
       return;
     }
     if (activeTournamentParticipant(socket)) {
