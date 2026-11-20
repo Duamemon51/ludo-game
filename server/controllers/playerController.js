@@ -1,9 +1,9 @@
 const jwt = require('jsonwebtoken');
 const { randomUUID } = require('node:crypto');
 const { pool, transaction } = require('../db/pool');
+const { MIN_WITHDRAWAL, getWithdrawableWinnings } = require('../game/withdrawal');
 
 const MAX_AMOUNT = 999999999999.99;
-const MIN_WITHDRAWAL = 2000;
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -51,7 +51,9 @@ async function playerAccount(playerId) {
     `SELECT p.id, p.login_id, p.display_name, p.status, p.status_before_block, p.master_id,
       m.status AS master_status, COALESCE(w.balance, 0) AS balance,
       COALESCE((SELECT SUM(r.amount) FROM user_withdrawal_requests r
-        WHERE r.user_id = p.id AND r.request_type = 'WITHDRAWAL' AND r.status = 'PENDING'), 0) AS held
+        WHERE r.user_id = p.id AND r.request_type = 'WITHDRAWAL' AND r.status = 'PENDING'), 0) AS held,
+      COALESCE((SELECT SUM(l.amount) FROM ledger l
+        WHERE l.account_id = p.id AND l.entry_type IN ('BET', 'WIN', 'WITHDRAW')), 0) AS net_game_profit
      FROM accounts p
      JOIN accounts m ON m.id = p.master_id AND m.role = 'MASTER'
      LEFT JOIN wallets w ON w.account_id = p.id
@@ -101,6 +103,19 @@ async function createWalletRequest(req, res, next, forcedType) {
         );
         const available = Number(player.balance) - Number(pending.held);
         if (value > available) throw new HttpError(409, 'Withdrawal exceeds your available balance.');
+        const [[gameProfit]] = await connection.execute(
+          `SELECT COALESCE(SUM(amount), 0) AS net_game_profit FROM ledger
+           WHERE account_id = ? AND entry_type IN ('BET', 'WIN', 'WITHDRAW')`,
+          [player.id]
+        );
+        const netGameProfit = Number(gameProfit.net_game_profit);
+        if (netGameProfit < MIN_WITHDRAWAL) {
+          throw new HttpError(409, 'You need at least 2,000 credits in net game winnings before requesting a withdrawal.');
+        }
+        const withdrawableWinnings = getWithdrawableWinnings(netGameProfit, pending.held);
+        if (value > withdrawableWinnings) {
+          throw new HttpError(409, `Withdrawal exceeds your available game winnings of ${withdrawableWinnings.toLocaleString()} credits.`);
+        }
       }
 
       await connection.execute(
@@ -140,6 +155,8 @@ async function getMe(req, res, next) {
       wallet: Number(player.balance),
       heldAmount: Number(player.held),
       availableBalance: Math.max(0, Number(player.balance) - Number(player.held)),
+      netGameWinnings: Number(player.net_game_profit),
+      withdrawableWinnings: getWithdrawableWinnings(player.net_game_profit, player.held),
     });
   } catch (error) {
     next(error);
@@ -229,6 +246,8 @@ async function getWallet(req, res, next) {
       balance,
       heldAmount: held,
       availableBalance: Math.max(0, balance - held),
+      netGameWinnings: Number(player.net_game_profit),
+      withdrawableWinnings: getWithdrawableWinnings(player.net_game_profit, held),
       ledger: ledger.map((entry) => ({
         id: String(entry.id),
         type: entry.entry_type,

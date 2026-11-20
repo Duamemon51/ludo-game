@@ -1,7 +1,8 @@
 const { transaction } = require('../db/pool');
 
 const MAX_BET = 5000;
-
+const WINNING_ALERT_THRESHOLD = 1500;
+const WITHDRAWAL_MINIMUM = 2000;
 class WagerError extends Error {
   constructor(message) {
     super(message);
@@ -127,16 +128,23 @@ async function createWageredMatch(
       await connection.execute('INSERT INTO match_players (match_id, player_id) VALUES (?, ?)', [matchId, playerId]);
     }
 
-    return {
-      id: matchId,
-      code: matchCode,
-      bet,
-      feePerPlayer,
-      platformFee,
-      payout,
-      botOpponent,
-      playerCount: expectedPlayers,
-    };
+   const playerBalance = walletByPlayer.get(playerIds[0]);
+
+const projectedBalance = roundCredits(
+  playerBalance - bet + payout
+);
+
+return {
+  id: matchId,
+  code: matchCode,
+  bet,
+  feePerPlayer,
+  platformFee,
+  payout,
+  botOpponent,
+  playerCount: expectedPlayers,
+  projectedBalance,
+};
   });
 }
 
@@ -208,6 +216,8 @@ async function settleWageredMatch(matchId, winnerId) {
 
     const payout = Number(match.payout);
     const balanceAfter = roundCredits(Number(wallets[0].balance) + payout);
+   const reachedThreshold = balanceAfter >= WINNING_ALERT_THRESHOLD;
+const withdrawalEligible = balanceAfter >= WITHDRAWAL_MINIMUM;
     await connection.execute('UPDATE wallets SET balance = ? WHERE account_id = ?', [balanceAfter, winnerId]);
     await connection.execute(
       `INSERT INTO ledger (account_id, amount, entry_type, balance_after, note)
@@ -220,14 +230,19 @@ async function settleWageredMatch(matchId, winnerId) {
       [winnerId, matchId]
     );
 
-    return {
-      cancelled: false,
-      bet: Number(match.bet_per_player),
-      feePerPlayer,
-      platformFee: Number(match.platform_fee),
-      payout,
-      botWon: false,
-    };
+   return {
+  cancelled: false,
+  bet: Number(match.bet_per_player),
+  feePerPlayer,
+  platformFee: Number(match.platform_fee),
+  payout,
+  botWon: false,
+  balanceAfter,
+  reachedThreshold,
+  threshold: WINNING_ALERT_THRESHOLD,
+  withdrawalEligible,
+  withdrawalMinimum: WITHDRAWAL_MINIMUM,
+};
   });
 }
 
