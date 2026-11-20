@@ -1,6 +1,5 @@
 import { io } from 'socket.io-client';
-
-const URL = import.meta.env.VITE_SERVER_URL || `http://${window.location.hostname}:3001`;
+import { API_URL } from './backendUrl';
 
 // Persist the browser ID across tab closes so the server can resume the game.
 function getClientId() {
@@ -27,7 +26,7 @@ function getAuthToken() {
   }
 }
 
-export const socket = io(URL, {
+export const socket = io(API_URL, {
   auth: (callback) => callback({ clientId: getClientId(), token: getAuthToken() }),
   autoConnect: true,
   reconnection: true,

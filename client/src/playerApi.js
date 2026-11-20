@@ -1,4 +1,4 @@
-import { API_URL } from './adminApi';
+import { API_URL } from './backendUrl';
 
 export const PLAYER_SERVER_UNAVAILABLE =
   "We couldn't connect. Check your internet connection and try again.";

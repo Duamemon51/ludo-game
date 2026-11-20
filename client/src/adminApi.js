@@ -1,4 +1,4 @@
-export const API_URL = import.meta.env.VITE_SERVER_URL || `http://${window.location.hostname}:3001`;
+import { API_URL } from './backendUrl';
 
 export async function adminRequest(path, { token, method = 'GET', body } = {}) {
   const headers = { Accept: 'application/json' };

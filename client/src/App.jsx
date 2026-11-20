@@ -923,7 +923,10 @@ export default function App() {
             tokens={game.tokens}
             captures={game.captures}
             lastMove={game.lastMove}
-            celebrateWinner={status === 'finishing' ? game.winner : null}
+            celebrateWinner={status === 'finishing'
+              && (!tournamentRound || game.winner === myColor)
+              ? game.winner
+              : null}
             turn={status === 'playing' || status === 'spectating' ? game.turn : null}
             myColor={myColor}
             rotation={boardRotation}

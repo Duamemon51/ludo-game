@@ -5,6 +5,7 @@ import PrivateTable from './PrivateTable';
 
 const PAWN_COLORS = ['#e53935', '#3fa34d', '#fcc419', '#1e88e5'];
 const TOURNAMENT = { id: 'quick-1v1', name: 'Quick 1 vs 1' };
+const TOURNAMENT_SIZE = 8;
 const TOURNAMENT_BETS = [300, 500, 1000, 2000, 3000, 4000, 5000];
 const SHOW_TOURNAMENT_UI = true;
 
@@ -304,7 +305,7 @@ export default function PlayerHome({
   const matchPlatformFee = feePerPlayer;
   const matchPayout = roundCredits((bet * 2) - matchPlatformFee);
   const tournamentPot = Number.isSafeInteger(tournamentBetAmount) && tournamentBetAmount >= 0
-    ? tournamentBetAmount * 7
+    ? tournamentBetAmount * TOURNAMENT_SIZE
     : 0;
   const tournamentFeePerPlayer = roundCredits((tournamentBetAmount * feePercent) / 100);
   const tournamentFee = tournamentFeePerPlayer;
@@ -1365,7 +1366,7 @@ export default function PlayerHome({
                 closeOnly
               />
               {!showCurrentBracket && (
-                <p>One-time entry. Win up to {tournamentPayout.toLocaleString()} credits after fees; the final prize depends on tournament entries.</p>
+                <p>One-time entry. The 8-player prize pool includes bot seats. The winner receives {tournamentPayout.toLocaleString()} credits after fees.</p>
               )}
               {showCurrentBracket && (
                 <>

@@ -1,4 +1,4 @@
-import { API_URL } from './adminApi';
+import { API_URL } from './backendUrl';
 
 export async function signIn(loginId, password) {
   let response;

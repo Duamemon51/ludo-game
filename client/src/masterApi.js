@@ -1,4 +1,4 @@
-import { API_URL } from './adminApi';
+import { API_URL } from './backendUrl';
 
 export async function masterRequest(path, { token, method = 'GET', body } = {}) {
   const headers = { Accept: 'application/json' };
