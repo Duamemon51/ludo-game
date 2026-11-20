@@ -1353,7 +1353,7 @@ export default function PlayerHome({
           {page === 'match' && (
             <section className="ph-panel">
               <PanelHead className="ph-close-only" title="Choose your bet" onBack={() => setPage('home')} closeOnly />
-              <p>Choose your bet from 70 to 5,000 rupees. The platform fee is {feePercent}% of the winner’s bet.</p>
+              <p>Choose your bet from 30 to 5,000 rupees. The platform fee is {feePercent}% of the winner’s bet.</p>
               <BetAmountInput
                 id="match-bet-amount"
                 value={bet}
