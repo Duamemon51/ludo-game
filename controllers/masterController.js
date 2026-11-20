@@ -1,9 +1,9 @@
 const jwt = require('jsonwebtoken');
 const { randomBytes, randomUUID } = require('node:crypto');
 const { pool, transaction } = require('../db/pool');
+const { MIN_WITHDRAWAL, getWithdrawableWinnings } = require('../game/withdrawal');
 
 const MAX_AMOUNT = 999999999999.99;
-const MIN_WITHDRAWAL = 2000;
 const STATUS_LABELS = { ACTIVE: 'Active', INACTIVE: 'Inactive', BLOCKED: 'Blocked' };
 const createTemporaryPassword = () => randomBytes(24).toString('base64url');
 
@@ -484,6 +484,19 @@ async function postUsersByIdWallet(req, res, next) {
         if (value > userBalance - Number(held.total)) {
           throw new HttpError(409, 'Withdrawal exceeds the user balance available after pending requests.');
         }
+        const [[gameProfit]] = await connection.execute(
+          `SELECT COALESCE(SUM(amount), 0) AS net_game_profit FROM ledger
+           WHERE account_id = ? AND entry_type IN ('BET', 'WIN', 'WITHDRAW')`,
+          [user.id]
+        );
+        const netGameProfit = Number(gameProfit.net_game_profit);
+        if (netGameProfit < MIN_WITHDRAWAL) {
+          throw new HttpError(409, 'The player needs at least 2,000 credits in net game winnings before withdrawal.');
+        }
+        const withdrawableWinnings = getWithdrawableWinnings(netGameProfit, held.total);
+        if (value > withdrawableWinnings) {
+          throw new HttpError(409, `Withdrawal exceeds the player's available game winnings of ${withdrawableWinnings.toLocaleString()} credits.`);
+        }
         userBalance -= value;
         masterBalance += value;
       }
@@ -567,10 +580,25 @@ async function patchUserWithdrawalsById(req, res, next) {
         if (request.request_type === 'WITHDRAWAL') {
           const [[held]] = await connection.execute(
             `SELECT COALESCE(SUM(amount), 0) AS total FROM user_withdrawal_requests
-             WHERE user_id = ? AND request_type = 'WITHDRAWAL' AND status = 'PENDING'`,
+             WHERE user_id = ? AND request_type = 'WITHDRAWAL' AND status = 'PENDING' AND id <> ?`,
+            [request.user_id, request.id]
+          );
+          if (Number(held.total) + Number(request.amount) > userBalance) {
+            throw new HttpError(409, 'User wallet no longer covers its pending withdrawal requests.');
+          }
+          const [[gameProfit]] = await connection.execute(
+            `SELECT COALESCE(SUM(amount), 0) AS net_game_profit FROM ledger
+             WHERE account_id = ? AND entry_type IN ('BET', 'WIN', 'WITHDRAW')`,
             [request.user_id]
           );
-          if (Number(held.total) > userBalance) throw new HttpError(409, 'User wallet no longer covers its pending withdrawal requests.');
+          const netGameProfit = Number(gameProfit.net_game_profit);
+          if (netGameProfit < MIN_WITHDRAWAL) {
+            throw new HttpError(409, 'The player no longer has 2,000 credits in net game winnings available for withdrawal.');
+          }
+          const withdrawableWinnings = getWithdrawableWinnings(netGameProfit, held.total);
+          if (Number(request.amount) > withdrawableWinnings) {
+            throw new HttpError(409, `Withdrawal exceeds the player's available game winnings of ${withdrawableWinnings.toLocaleString()} credits.`);
+          }
           userBalance -= Number(request.amount);
           masterBalance += Number(request.amount);
         } else {

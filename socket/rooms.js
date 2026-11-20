@@ -56,7 +56,7 @@ const BOT_NAMES_BY_LEVEL = {
   ],
 };
 const BOT_NAMES = Object.values(BOT_NAMES_BY_LEVEL).flat();
-const BOT_LEVELS = ['expert', 'hard', 'medium'];
+const BOT_LEVELS = ['hard', 'medium'];
 const rooms = new Map();
 const sessions = new Map(); // clientId -> roomId (for reconnecting)
 const botNamesByClientId = new Map();
@@ -1385,9 +1385,16 @@ function checkQueue(io, queueType) {
   );
   if (expiredIndex !== -1) {
     const [player] = q.splice(expiredIndex, 1);
-    const fallbackCount = botFallbackCounts.get(String(player.playerId)) || 0;
-    const botLevel = pickBotLevel(fallbackCount);
-    beginWageredMatch(io, queueType, [player], tokensToWin, true, botLevel);
+   const fallbackCount = botFallbackCounts.get(String(player.playerId)) || 0;
+
+beginWageredMatch(
+  io,
+  queueType,
+  [player],
+  tokensToWin,
+  true,
+  fallbackCount
+);
     return;
   }
 
@@ -1407,16 +1414,32 @@ function checkQueue(io, queueType) {
   }
 }
 
-function beginWageredMatch(io, queueType, players, tokensToWin, botOpponent, botLevel) {
+function beginWageredMatch(
+  io,
+  queueType,
+  players,
+  tokensToWin,
+  botOpponent,
+  fallbackCount
+) {
   processingQueues.add(queueType);
-  startWageredRoom(io, players, tokensToWin, botOpponent, botLevel)
+
+  startWageredRoom(
+    io,
+    players,
+    tokensToWin,
+    botOpponent,
+    fallbackCount
+  )
     .catch((error) => {
       const message = error instanceof WagerError
         ? error.message
         : 'Could not start the wagered match. Please try again.';
+
       if (!(error instanceof WagerError)) {
         console.error('Could not start wagered match:', error);
       }
+
       players.forEach((player) => player.socket.emit('match_error', message));
     })
     .finally(() => {
@@ -1425,7 +1448,7 @@ function beginWageredMatch(io, queueType, players, tokensToWin, botOpponent, bot
     });
 }
 
-async function startWageredRoom(io, players, tokensToWin, botOpponent, botLevel) {
+async function startWageredRoom(io, players, tokensToWin, botOpponent, fallbackCount) {
   if (players.some((player) => !player.socket.connected)) {
     throw new WagerError('A player disconnected before the match could start.');
   }
@@ -1437,6 +1460,13 @@ async function startWageredRoom(io, players, tokensToWin, botOpponent, botLevel)
     players[0].queueType,
     { botOpponent }
   );
+  const botLevel = botOpponent
+  ? (
+      Number(wager.projectedBalance) >= 2000
+        ? 'expert'
+        : pickBotLevel(fallbackCount)
+    )
+  : undefined;
   try {
     createRoom(io, players, { tokensToWin, wager, botLevel, botOpponent });
   } catch (error) {
