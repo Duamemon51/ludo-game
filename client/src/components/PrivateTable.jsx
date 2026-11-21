@@ -127,9 +127,7 @@ export default function PrivateTable({
         </div>
 
         <p>
-          Create a private table for friends, or join one with its room code.
-          4-player tables can start with 2 or more people; empty seats stay vacant.
-          Winnings depend on the number of players who join.
+          Create or join a private table with friends.
         </p>
 
         <BetAmountInput
