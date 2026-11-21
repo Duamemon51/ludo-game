@@ -4,8 +4,13 @@ import BetAmountInput, { MIN_BET, MAX_BET } from './BetAmountInput';
 const CSS = `
   .ph-private-table .ph-icon-btn { width: 32px; height: 32px; }
   .ph-private-table .ph-icon-btn svg { width: 16px; height: 16px; }
-  .ph-private-table > p { font-size: 12px; line-height: 1.35; }
-  .ph-private-table form { margin-top: 14px; }
+  .ph-private-table .ph-head { margin-bottom: 2px; }
+  .ph-private-table > p { margin: 0 0 1px; font-size: 11px; line-height: 1.15; }
+  .ph-private-table .ph-bet-label { margin-top: 1px; margin-bottom: 2px; }
+  .ph-private-table .ph-bet-stepper { margin-bottom: 3px; }
+  .ph-private-table .ph-bet-presets { margin-bottom: 3px; }
+  .ph-private-table .ph-bet-hint { margin-bottom: 4px; }
+  .ph-private-table form { margin-top: 3px; }
   .ph-private-join { display: flex; gap: 10px; }
   .ph-private-join input {
     min-width: 0;
@@ -22,6 +27,17 @@ const CSS = `
   }
   .ph-private-join input:focus-visible { outline: 3px solid #d89a19; outline-offset: 2px; }
   .ph-private-join .ph-primary { flex: 1; }
+  @media (max-width: 600px) {
+    .ph-private-table { padding: 8px 12px 10px; }
+    .ph-private-table .ph-head { min-height: 28px; margin-bottom: 0; }
+    .ph-private-table > p { margin: 0; font-size: 10px; line-height: 1.1; }
+    .ph-private-table .ph-bet-label { margin: 0 auto 1px; font-size: 14px; }
+    .ph-private-table .ph-bet-stepper { height: 38px; margin-bottom: 2px; }
+    .ph-private-table .ph-bet-presets { margin-bottom: 2px; }
+    .ph-private-table .ph-bet-preset { min-height: 30px; }
+    .ph-private-table .ph-bet-hint { margin-bottom: 2px; font-size: 9px; line-height: 1.1; }
+    .ph-private-table form { margin-top: 1px; }
+  }
 `;
 
 const CODE_LENGTH = 5;
