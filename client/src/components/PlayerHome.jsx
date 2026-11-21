@@ -956,6 +956,8 @@ export default function PlayerHome({
           .ph-panel { padding: 16px; }
           .ph-panel-home { padding: 0; }
           .ph-panel h2 { font-size: 21px; }
+          .ph-head { margin-bottom: 6px; }
+          .ph-panel > p { margin: 2px 0 0; }
           .ph-lock { margin-top: 12px; padding: 12px; font-size: 13px; }
           .ph-prize-summary { gap: 4px; margin-bottom: 10px; border-radius: 10px; padding: 7px 5px; }
           .ph-prize-summary span { font-size: 9px; }
