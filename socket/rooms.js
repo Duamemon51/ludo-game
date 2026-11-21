@@ -22,6 +22,7 @@ const MODE_COLORS = {
 const TURN_MS = 20000;
 const QUEUE_WAIT_MS = { normal: 15000, tournament: 20000 };
 const TOURNAMENT_PREVIEW_MS = 5000;
+const TOURNAMENT_COUNTDOWN_MS = 3000;
 const SKIP_MS = 1200;
 const MOVE_STEP_MS = 250;
 const MOVE_SETTLE_MS = 350;
@@ -1050,6 +1051,23 @@ function findReadyTournamentGroup(queue, now = Date.now()) {
 
 async function launchTournamentRound(io, runtime, roundNo, roundMatches) {
   runtime.currentRound = roundNo;
+  const startingSlots = roundMatches.flatMap((match) => [
+    Number(match.player1_slot),
+    Number(match.player2_slot),
+  ]);
+  for (const participant of runtime.participants) {
+    if (
+      participant.isBot
+      || !participant.socket?.connected
+      || !startingSlots.includes(participant.slot)
+    ) continue;
+    participant.socket.emit('tournament_countdown', {
+      tournamentId: runtime.id,
+      round: roundNo,
+      seconds: 3,
+    });
+  }
+  await new Promise((resolve) => setTimeout(resolve, TOURNAMENT_COUNTDOWN_MS));
   const results = await Promise.allSettled(roundMatches.map(async (match) => {
     const key = `${roundNo}:${match.match_no}`;
     if (runtime.matches.has(key)) return false;
