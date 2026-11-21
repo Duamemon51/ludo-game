@@ -146,6 +146,7 @@ export default function App() {
   const pendingOverRef = useRef(null);
   const noticeTimerRef = useRef(null);
   const reconnectNoticeTimerRef = useRef(null);
+  const myColorRef = useRef(null);
   const statusRef = useRef(status);
   statusRef.current = status;
   const diceOptions = game?.diceOptions || (
@@ -386,6 +387,7 @@ export default function App() {
         tournament?.round === 3 ? tournament.prizePool ?? null : null
       ));
       setTournamentRound(TOURNAMENT_ROUND_LABELS[tournament?.round] || null);
+      myColorRef.current = yourColor;
       setMyColor(yourColor);
       setHomeView('menu');
       setLobby(null);
@@ -398,6 +400,7 @@ export default function App() {
       setSpectatorMatch(match);
       setTournamentRound(TOURNAMENT_ROUND_LABELS[roundNo] || null);
       setMatchWinAmount(null);
+      myColorRef.current = null;
       setMyColor(null);
       setGameResult(null);
       setGame(null);
@@ -414,8 +417,11 @@ export default function App() {
       }
       showNotice(message);
     };
-    const onTournamentUpdate = ({ message, status: tournamentStatus, round }) => {
+    const onTournamentUpdate = ({ message, status: tournamentStatus, round, participantStatus }) => {
       setIsResumingGame(false);
+      if (participantStatus === 'WAITING') {
+        setReturnToTournament(true);
+      }
       if (!message) return;
       window.dispatchEvent(new Event('player:refresh'));
       showNotice({
@@ -458,6 +464,14 @@ export default function App() {
         window.dispatchEvent(new Event('player:refresh'));
         showNotice('This match has ended.');
         return;
+      }
+      if (
+        result?.tournament
+        && result.winner === myColorRef.current
+        && ['WAITING', 'ROUND_READY'].includes(result.tournament.status)
+      ) {
+        setReturnToTournament(true);
+        window.dispatchEvent(new Event('player:refresh'));
       }
       if (leaveRequestRef.current) {
         pendingOverRef.current = result;
@@ -660,6 +674,7 @@ export default function App() {
     spectatorMatchRef.current = null;
     setSpectatorMatch(null);
     setMyColor(null);
+    myColorRef.current = null;
     setStatus('idle');
   };
   useEffect(() => {

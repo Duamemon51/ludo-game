@@ -642,19 +642,19 @@ export default function PlayerHome({
         .ph-bets { display: flex; gap: 10px; flex-wrap: wrap; margin: 18px 0; }
         .ph-bet { border: 1px solid #9a6f0080; border-radius: 10px; padding: 10px 18px; color: #3b2412; background: #fff9e6; }
         .ph-bet.selected { border-color: #a56b06; background: #ffe49a; }
-        .ph-bet-label { display: block; width: min(100%, 300px); margin: 12px auto 6px; color: #715637; font-weight: 700; }
-        .ph-bet-stepper { display: grid; grid-template-columns: 42px minmax(0, 1fr) 42px; width: min(100%, 300px); height: 50px; margin: 0 auto 12px; overflow: hidden; border: 1px solid #aa8585; border-radius: 7px; background: #fff; }
+        .ph-bet-label { display: block; width: min(100%, 300px); margin: 8px auto 4px; color: #715637; font-weight: 700; }
+        .ph-bet-stepper { display: grid; grid-template-columns: 42px minmax(0, 1fr) 42px; width: min(100%, 300px); height: 50px; margin: 0 auto 6px; overflow: hidden; border: 1px solid #aa8585; border-radius: 7px; background: #fff; }
         .ph-bet-stepper-button { border: 0; color: #796868; background: #fff0ef; font: 700 20px system-ui, sans-serif; cursor: pointer; }
         .ph-bet-stepper-button:first-child { border-right: 1px solid #aa8585; }
         .ph-bet-stepper-button:last-child { border-left: 1px solid #aa8585; }
         .ph-bet-stepper-button:disabled { opacity: .45; cursor: not-allowed; }
         .ph-bet-stepper-value { min-width: 0; border: 0; border-radius: 0; padding: 8px 12px; color: #383838; background: #fff; font: 16px system-ui, sans-serif; }
         .ph-bet-stepper-value:focus-visible { outline: 2px solid #d89a19; outline-offset: -2px; }
-        .ph-bet-presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; width: min(100%, 300px); margin: 0 auto 12px; }
+        .ph-bet-presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; width: min(100%, 300px); margin: 0 auto 8px; }
         .ph-bet-preset { min-width: 0; min-height: 36px; padding: 0 2px; border: 1px solid #c39729; border-radius: 8px; color: #55340b; background: linear-gradient(180deg, #fff9e6, #f3dfa9); font: 800 12px 'Baloo 2', system-ui, sans-serif; white-space: nowrap; cursor: pointer; }
         .ph-bet-preset:hover { filter: brightness(1.05); }
         .ph-bet-preset.selected { color: #4a3000; background: linear-gradient(180deg, #fff1a8, #fcc419 65%, #e0a000); box-shadow: inset 0 1px 0 #fff8, 0 2px 0 #9a6f00; }
-        .ph-tournament-bet-content { width: min(100%, 420px); margin: 16px auto 0; color: #3b2412; }
+        .ph-tournament-bet-content { width: min(100%, 420px); margin: 8px auto 0; color: #3b2412; }
         .ph-tournament-label { display: block; margin: 0 0 10px; color: #5e4322; font-size: 17px; font-weight: 800; text-align: center; }
         .ph-bet-selector { display: grid; grid-template-columns: 30px minmax(0, 1fr) 30px; align-items: center; gap: 10px; width: min(100%, 280px); margin: 0 auto 10px; }
         .ph-bet-step { display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 30px; height: 30px; margin: 0; padding: 0; border: 1px solid #c39729; border-radius: 50%; color: #55340b; background: linear-gradient(180deg, #fff1a8, #fcc419 65%, #e0a000); box-shadow: 0 2px 0 #9a6f00, 0 3px 7px #3b241225; cursor: pointer; }
@@ -957,15 +957,27 @@ export default function PlayerHome({
           .ph-panel-home { padding: 0; }
           .ph-panel h2 { font-size: 21px; }
           .ph-lock { margin-top: 12px; padding: 12px; font-size: 13px; }
+          .ph-prize-summary { gap: 4px; margin-bottom: 10px; border-radius: 10px; padding: 7px 5px; }
+          .ph-prize-summary span { font-size: 9px; }
+          .ph-prize-summary strong { margin-top: 2px; font-size: 12px; }
+          .ph-tournament-bet-content .ph-prize-summary .ph-prize-winner strong { font-size: 14px; }
           .ph-bets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 14px 0; }
           .ph-bet, .ph-back, .ph-primary { min-height: 44px; }
+          .ph-bet-label { width: min(100%, 270px); margin: 4px auto 3px; font-size: 15px; }
+          .ph-bet-stepper { grid-template-columns: 38px minmax(0, 1fr) 38px; width: min(100%, 270px); height: 42px; margin-bottom: 5px; }
+          .ph-bet-stepper-value { font-size: 15px; }
+          .ph-bet-presets { gap: 5px; width: min(100%, 270px); margin-bottom: 6px; }
+          .ph-bet-preset { min-height: 32px; border-radius: 7px; font-size: 11px; }
+          .ph-bet-hint { margin-bottom: 8px; font-size: 10px; }
           .ph-primary { width: 100%; }
           .ph-mobile-back { min-height: 34px; padding: 5px 11px; font-size: 13px; }
           .ph-tournament { padding: 14px; }
-          .ph-tournament-panel { padding: 15px; }
+          .ph-tournament-panel { padding: 12px 15px 15px; }
           .ph-tournament-panel > .ph-mobile-back { margin-bottom: 8px; }
-          .ph-tournament-panel > p { margin: 5px 0; }
-          .ph-tournament-panel .ph-grid { margin-top: 8px; }
+          .ph-tournament-panel > p { margin: 2px 0; }
+          .ph-tournament-panel .ph-grid { margin-top: 2px; }
+          .ph-tournament-bet-content { margin-top: 0; }
+          .ph-tournament-bet-content .ph-bet-label { margin-top: 4px; }
           .ph-tournament-panel .ph-tournament { padding: 12px; }
           .ph-tournament-panel .ph-tournament p { margin: 4px 0; }
           .ph-tournament-panel .ph-tournament button { margin-top: 8px; }
@@ -1469,9 +1481,9 @@ export default function PlayerHome({
                     One-time entry · enter a whole amount between 30 and 5,000
                   </div>
                   <div className="ph-prize-summary" aria-live="polite">
-                    <div><span>Maximum prize pool</span><strong>{tournamentPot.toLocaleString()}</strong></div>
+                    <div><span>Prize pool</span><strong>{tournamentPot.toLocaleString()}</strong></div>
                     <div><span>Platform fee</span><strong>{tournamentFee.toLocaleString()}</strong></div>
-                    <div className="ph-prize-winner"><span>You can win up to</span><strong>{tournamentPayout.toLocaleString()}</strong></div>
+                    <div className="ph-prize-winner"><span>Winner gets</span><strong>{tournamentPayout.toLocaleString()}</strong></div>
                   </div>
                   <button
                     type="button"
