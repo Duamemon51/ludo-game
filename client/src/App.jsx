@@ -134,6 +134,7 @@ export default function App() {
   const [tournamentRound, setTournamentRound] = useState(null);
   const [spectatorMatch, setSpectatorMatch] = useState(null);
   const [returnToTournament, setReturnToTournament] = useState(false);
+  const [tournamentCountdown, setTournamentCountdown] = useState(null);
   const [name, setName] = useState(
     () => localStorage.getItem('ludo-name') || 'Player' + Math.floor(100 + Math.random() * 900)
   );
@@ -247,6 +248,7 @@ export default function App() {
 
   const signOut = () => {
     setReturnToTournament(false);
+    setTournamentCountdown(null);
     setIsResumingGame(false);
     localStorage.removeItem(AUTH_STORAGE_KEY);
     socket.disconnect();
@@ -335,6 +337,7 @@ export default function App() {
       setIsResumingGame(false);
       if (statusRef.current === 'over' || statusRef.current === 'finishing') return;
       if (statusRef.current === 'playing') showNotice('Your game has ended.');
+      setTournamentCountdown(null);
       setStatus('idle');
       setGame(null);
       setLobby(null);
@@ -355,6 +358,7 @@ export default function App() {
       setQueueEnd(Date.now() + waitMs);
     };
     const onTournamentBracket = (bracket) => {
+      setTournamentCountdown(null);
       setTournamentBracketPreview(bracket);
       setStatus('bracket');
     };
@@ -372,6 +376,7 @@ export default function App() {
         return;
       }
       setConnected(true);
+      setTournamentCountdown(null);
       matchmakingRequestRef.current = null;
       cancelledMatchmakingRef.current = false;
       setReturnToTournament(false);
@@ -417,9 +422,13 @@ export default function App() {
       }
       showNotice(message);
     };
+    const onTournamentCountdown = ({ seconds, round }) => {
+      setTournamentRound(TOURNAMENT_ROUND_LABELS[round] || null);
+      setTournamentCountdown(Math.max(1, Number(seconds) || 3));
+    };
     const onTournamentUpdate = ({ message, status: tournamentStatus, round, participantStatus }) => {
       setIsResumingGame(false);
-      if (participantStatus === 'WAITING') {
+      if (participantStatus === 'WAITING' || tournamentStatus === 'COMPLETED') {
         setReturnToTournament(true);
       }
       if (!message) return;
@@ -467,8 +476,13 @@ export default function App() {
       }
       if (
         result?.tournament
-        && result.winner === myColorRef.current
-        && ['WAITING', 'ROUND_READY'].includes(result.tournament.status)
+        && (
+          result.tournament.status === 'COMPLETED'
+          || (
+            result.winner === myColorRef.current
+            && ['WAITING', 'ROUND_READY'].includes(result.tournament.status)
+          )
+        )
       ) {
         setReturnToTournament(true);
         window.dispatchEvent(new Event('player:refresh'));
@@ -509,6 +523,7 @@ export default function App() {
     socket.on('tournament_bracket', onTournamentBracket);
     socket.on('tournament_watch_started', onTournamentWatchStarted);
     socket.on('tournament_watch_error', onTournamentWatchError);
+    socket.on('tournament_countdown', onTournamentCountdown);
     socket.on('lobby_update', onLobby);
     socket.on('lobby_error', showNotice);
     socket.on('match_found', onMatch);
@@ -539,6 +554,7 @@ export default function App() {
       socket.off('tournament_bracket', onTournamentBracket);
       socket.off('tournament_watch_started', onTournamentWatchStarted);
       socket.off('tournament_watch_error', onTournamentWatchError);
+      socket.off('tournament_countdown', onTournamentCountdown);
       socket.off('lobby_update', onLobby);
       socket.off('lobby_error', showNotice);
       socket.off('match_found', onMatch);
@@ -598,6 +614,14 @@ export default function App() {
     const id = setInterval(tick, 250);
     return () => clearInterval(id);
   }, [status, queueEnd]);
+
+  useEffect(() => {
+    if (!tournamentCountdown || tournamentCountdown <= 1) return undefined;
+    const id = setTimeout(() => {
+      setTournamentCountdown((current) => current > 1 ? current - 1 : current);
+    }, 1000);
+    return () => clearTimeout(id);
+  }, [tournamentCountdown]);
 
   // Auto-play when there is exactly one possible move
   useEffect(() => {
@@ -671,6 +695,7 @@ export default function App() {
     setGameResult(null);
     setMatchWinAmount(null);
     setTournamentRound(null);
+    setTournamentCountdown(null);
     spectatorMatchRef.current = null;
     setSpectatorMatch(null);
     setMyColor(null);
@@ -910,6 +935,97 @@ export default function App() {
       )}
 
       {status === 'queued' && <MatchmakingScreen secondsLeft={queueLeft} queueType={matchmakingType} onCancel={cancel} />}
+      {tournamentCountdown && (
+        <div className="tournament-game-countdown" role="status" aria-live="assertive">
+          <div className="tournament-game-countdown-card">
+            <span>Your {tournamentRound ? `${tournamentRound} match` : 'tournament match'} starts in</span>
+            <strong key={tournamentCountdown}>{tournamentCountdown}</strong>
+          </div>
+          <style>{`
+            .tournament-game-countdown {
+              position: fixed;
+              inset: 0;
+              z-index: 130;
+              display: grid;
+              place-items: center;
+              background: rgba(15, 8, 3, .58);
+              backdrop-filter: blur(4px);
+            }
+            .tournament-game-countdown-card {
+              display: grid;
+              justify-items: center;
+              gap: 4px;
+              width: 230px;
+              border: 1px solid #d5a928;
+              border-radius: 22px;
+              padding: 18px 20px 14px;
+              color: #3b2412;
+              background: linear-gradient(155deg, #fffdf5, #fbefcf 70%, #f1dfb2);
+              box-shadow: inset 0 2px 0 #fff, 0 9px 0 #704217, 0 20px 45px #0008;
+              text-align: center;
+            }
+            .tournament-game-countdown-card span {
+              font-size: 14px;
+              font-weight: 800;
+            }
+            .tournament-game-countdown-card strong {
+              display: grid;
+              width: 86px;
+              height: 86px;
+              place-items: center;
+              border: 4px solid #fff2a6;
+              border-radius: 50%;
+              color: #fff;
+              background: linear-gradient(180deg, #ffca36, #e89b00);
+              box-shadow: 0 5px 0 #9a6f00, 0 8px 18px #3b241266;
+              font: 400 52px/1 'Lilita One', 'Baloo 2', system-ui, sans-serif;
+              animation: tournament-countdown-pop .25s ease-out;
+            }
+            @keyframes tournament-countdown-pop {
+              from { transform: scale(.72); opacity: .35; }
+              to { transform: scale(1); opacity: 1; }
+            }
+            @media (max-width: 600px) {
+              .tournament-game-countdown {
+                padding:
+                  max(12px, env(safe-area-inset-top))
+                  12px
+                  max(12px, env(safe-area-inset-bottom));
+              }
+              .tournament-game-countdown-card {
+                width: min(230px, calc(100vw - 24px));
+                max-width: 230px;
+                box-sizing: border-box;
+                border-radius: 18px;
+                padding: 14px 16px 12px;
+              }
+              .tournament-game-countdown-card span {
+                font-size: 13px;
+              }
+              .tournament-game-countdown-card strong {
+                width: 72px;
+                height: 72px;
+                border-width: 3px;
+                font-size: 44px;
+              }
+            }
+            @media (max-height: 500px) and (orientation: landscape) {
+              .tournament-game-countdown-card {
+                width: 210px;
+                padding: 10px 14px 8px;
+              }
+              .tournament-game-countdown-card strong {
+                width: 58px;
+                height: 58px;
+                font-size: 36px;
+              }
+            }
+            @media (prefers-reduced-motion: reduce) {
+              .tournament-game-countdown-card strong { animation: none; }
+            }
+          `}</style>
+        </div>
+      )}
       {status === 'bracket' && tournamentBracketPreview && (
         <TournamentBracketScreen
           matches={tournamentBracketPreview.matches}
