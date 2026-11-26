@@ -4,6 +4,7 @@ import HomeGameCards from './HomeGameCards';
 import PrivateTable from './PrivateTable';
 import DiceLoader from './DiceLoader';
 import BetAmountInput, { MIN_BET, MAX_BET } from './BetAmountInput';
+import SportsOddsPage from './SportsOddsPage';
 
 const PAWN_COLORS = ['#e53935', '#3fa34d', '#fcc419', '#1e88e5'];
 const TOURNAMENT = { id: 'quick-1v1', name: 'Quick 1 vs 1' };
@@ -1341,6 +1342,7 @@ export default function PlayerHome({
                 onChooseMatch={() => setPage('match')}
                 onChoosePrivate={() => setPage('private')}
                 onChooseTournament={() => setPage('tournaments')}
+                onChooseSports={() => setPage('sports')}
               />
 
               {!loading && !active && <div className="ph-lock">Your account is inactive. You can view your wallet and history, but cannot start a game.</div>}
@@ -1363,6 +1365,8 @@ export default function PlayerHome({
               onBack={() => setPage('home')}
             />
           )}
+
+          {page === 'sports' && <SportsOddsPage onBack={() => setPage('home')} />}
 
           {page === 'match' && (
             <section className="ph-panel">

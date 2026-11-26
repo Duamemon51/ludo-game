@@ -1,0 +1,66 @@
+.ph-sports-panel{min-width:0;color:#172b43}
+.ph-sports-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.ph-sports-back{min-height:44px;border:0;border-radius:9px;padding:8px 12px;color:#fff;background:#244465;font-weight:800}
+.ph-sports-back span{font-size:21px;vertical-align:-1px}
+.ph-sports-test-tag{border-radius:999px;padding:5px 9px;color:#07543f;background:#c9f5e8;font-size:10px;font-weight:900;letter-spacing:.08em}
+.ph-sports-event{border-radius:12px;padding:16px;color:#fff;background:#244465;box-shadow:0 4px 10px #16283a35}
+.ph-sports-event-meta{display:flex;align-items:center;justify-content:space-between;color:#c9e2f5;font-size:11px;font-weight:900;letter-spacing:.08em}
+.ph-sports-event h2{margin:12px 0 0;color:#fff;font-size:clamp(20px,4vw,27px);line-height:1.15}
+.ph-sports-event p{margin:7px 0 0;color:#cfdeec;font-size:12px}
+.ph-sports-event-id{margin-top:13px;border-top:1px solid #ffffff25;padding-top:10px;color:#d4e2ef;font-size:11px}
+.ph-sports-event-id span{padding:0 5px}
+.ph-sports-status{display:flex;align-items:center;gap:5px}
+.ph-sports-status i{width:7px;height:7px;border-radius:50%;background:#38d99b;box-shadow:0 0 0 3px #38d99b2b}
+.ph-sports-market{min-width:0;margin-top:14px;overflow:hidden;border:1px solid #d5e0e9;border-radius:12px;background:#fff;box-shadow:0 3px 9px #16283a12}
+.ph-sports-market-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;color:#fff;background:#244465}
+.ph-sports-market-heading>div{display:flex;align-items:center;gap:8px;min-width:0}
+.ph-sports-live-mark{color:#38d99b;font-size:12px}
+.ph-sports-market-heading strong{font-size:14px}
+.ph-sports-market-heading small{border-radius:5px;padding:2px 5px;color:#c9e2f5;background:#ffffff1a;font-size:9px}
+.ph-sports-market-id{color:#c9e2f5;font-size:10px}
+.ph-sports-column-headings,.ph-sports-runner{display:grid;grid-template-columns:minmax(0,1fr) minmax(65px,.36fr) minmax(65px,.36fr);gap:5px;align-items:stretch}
+.ph-sports-column-headings{padding:8px 9px 5px;color:#718096;font-size:9px;font-weight:900;letter-spacing:.06em}
+.ph-sports-column-headings span:not(:first-child){text-align:center}
+.ph-sports-runner{padding:5px 9px 10px}
+.ph-sports-runner-name{display:flex;flex-direction:column;justify-content:center;min-width:0}
+.ph-sports-runner-name strong{overflow:hidden;color:#21364c;font-size:16px;text-overflow:ellipsis;white-space:nowrap}
+.ph-sports-runner-name small{color:#778697;font-size:9px;font-weight:800}
+.ph-sports-odd{display:flex;min-height:62px;flex-direction:column;align-items:center;justify-content:center;border:1px solid transparent;border-radius:6px;color:#17364a;cursor:pointer}
+.ph-sports-odd.back{background:#91d6f0}
+.ph-sports-odd.lay{background:#f5b5c1}
+.ph-sports-odd strong{font-size:19px;line-height:1.1}
+.ph-sports-odd small{margin-top:3px;color:#40566a;font-size:10px}
+.ph-sports-odd.selected{border-color:#145b83;box-shadow:inset 0 0 0 2px #fff,0 0 0 2px #145b83}
+.ph-sports-odd:focus-visible,.ph-sports-back:focus-visible{outline:3px solid #f5b521;outline-offset:2px}
+.ph-sports-selection{display:flex;flex-wrap:wrap;align-items:center;gap:5px 8px;margin-top:12px;border:1px solid #b5dccd;border-radius:9px;padding:10px 12px;color:#194e3f;background:#e4f7ef;font-size:12px}
+.ph-sports-selection span{color:#416a5d}
+.ph-sports-disclaimer{margin:12px 0 0;color:#718096!important;font-size:11px}
+@media(max-width:600px){
+  .ph-sports-panel{padding:13px}
+  .ph-sports-event{padding:14px}
+  .ph-sports-event h2{font-size:clamp(19px,6vw,24px)}
+  .ph-sports-market-heading{padding:9px}
+  .ph-sports-market-heading>div{gap:6px}
+  .ph-sports-column-headings,.ph-sports-runner{grid-template-columns:minmax(0,1fr) minmax(56px,.36fr) minmax(56px,.36fr);gap:4px;padding-right:7px;padding-left:7px}
+  .ph-sports-column-headings{font-size:8px}
+  .ph-sports-odd{min-height:58px}
+  .ph-sports-runner-name strong{font-size:14px}
+  .ph-sports-back{min-width:84px}
+}
+
+@media(max-width:360px){
+  .ph-sports-panel{padding:11px}
+  .ph-sports-event{padding:12px}
+  .ph-sports-column-headings,.ph-sports-runner{grid-template-columns:minmax(0,1fr) 54px 54px;gap:3px;padding-right:6px;padding-left:6px}
+  .ph-sports-odd{min-height:54px}
+  .ph-sports-odd strong{font-size:17px}
+  .ph-sports-market-heading strong{font-size:13px}
+  .ph-sports-market-id{font-size:9px}
+}
+
+@media(max-height:500px) and (orientation:landscape){
+  .ph-sports-event{padding:10px}
+  .ph-sports-event h2{margin-top:7px}
+  .ph-sports-event-id{margin-top:8px;padding-top:7px}
+  .ph-sports-odd{min-height:48px}
+}

@@ -213,7 +213,7 @@ function TrophyIcon() {
 }
 
 export default function HomeGameCards({
-  loading, active, connected = true, onChooseMatch, onChoosePrivate, onChooseTournament, showTournament = true,
+  loading, active, connected = true, onChooseMatch, onChoosePrivate, onChooseTournament, onChooseSports, showTournament = true,
 }) {
   return (
     <>
@@ -239,6 +239,18 @@ export default function HomeGameCards({
           <span className="hg-text">
             <strong>Private table</strong>
             <small>2 or 4 players</small>
+          </span>
+        </button>
+        <button type="button" className="hg-card hg-sports" onClick={onChooseSports}>
+          <span className="hg-icon" aria-hidden="true">
+            <svg viewBox="0 0 100 74" fill="none">
+              <circle cx="50" cy="36" r="25" fill="#fff3cc" stroke="#573516" strokeWidth="4" />
+              <path d="m50 21 9 7-3 11H44l-3-11 9-7ZM26 29l15-1m18 0 15 1M32 52l12-13m26 13L56 39m-6 22V39" stroke="#277447" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+          <span className="hg-text">
+            <strong>Sports API</strong>
+            <small>Cricket odds · Test</small>
           </span>
         </button>
       </div>
