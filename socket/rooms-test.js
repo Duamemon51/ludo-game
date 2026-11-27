@@ -2,7 +2,7 @@ const assert = require('assert');
 const engine = require('../game/engine');
 const { calculateWager } = require('../game/wager');
 const {
-  registerHandlers, autoAct, publicState, pickBotName, forfeitGame, rollDiceForCurrentPlayer,
+  registerHandlers, autoAct, publicState, pickBotName, forfeitGame, rollDiceForCurrentPlayer, doRoll,
   takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE, pickBotLevel,
   canStartPrivateRoom, isPrivateRoomStarted, createRoom, advanceTurn,
   isTournamentGroupReady, findReadyTournamentGroup, recordHardForcedCapture,
@@ -726,6 +726,125 @@ skippedLeftSeatRoom.game.turn = 'red';
 advanceTurn(skippedLeftSeatRoom);
 assert.strictEqual(skippedLeftSeatRoom.game.turn, 'yellow');
 
+const simultaneousRollGame = engine.createGame(['red', 'yellow']);
+simultaneousRollGame.tokens.red[0] = 10;
+const simultaneousRollRoom = {
+  id: 'simultaneous-roll-test',
+  game: simultaneousRollGame,
+  seats: [{ color: 'red', isBot: false, level: 'medium', missed: 0 }],
+  phase: 'roll',
+  dice: null,
+  dieRollId: 0,
+  rollId: 0,
+  rolledDice: [],
+  rolledDiceIds: [],
+  usedDiceIds: [],
+  diceOptions: [],
+  validMoves: [],
+  timer: null,
+};
+const simultaneousRollIo = { to: () => ({ emit: () => {} }) };
+const originalRandomForSimultaneousRoll = Math.random;
+try {
+  const diceRandomValues = [0.5, 0.5, 0.5, 0.7];
+  Math.random = () => diceRandomValues.shift();
+  doRoll(simultaneousRollIo, simultaneousRollRoom);
+  assert.deepStrictEqual(simultaneousRollRoom.rolledDice, [3, 4]);
+  assert.deepStrictEqual(simultaneousRollRoom.rolledDiceIds, [0, 1]);
+  assert.strictEqual(simultaneousRollRoom.dieRollId, 2);
+  assert.deepStrictEqual(
+    simultaneousRollRoom.diceOptions.map(({ id, value }) => ({ id, value })),
+    [{ id: 0, value: 3 }, { id: 1, value: 4 }]
+  );
+  assert.strictEqual(simultaneousRollRoom.phase, 'move');
+} finally {
+  Math.random = originalRandomForSimultaneousRoll;
+  if (simultaneousRollRoom.timer) clearTimeout(simultaneousRollRoom.timer);
+}
+console.log('PASS: each turn rolls two dice together and offers both as move options');
+
+function makeDoubleSixTestRoom() {
+  const gameState = engine.createGame(['red', 'yellow']);
+  gameState.tokens.red[0] = 10;
+  return {
+    id: 'double-six-test',
+    game: gameState,
+    seats: [{ color: 'red', isBot: false, level: 'medium', missed: 0 }],
+    phase: 'roll',
+    dice: null,
+    dieRollId: 0,
+    rollId: 0,
+    rolledDice: [],
+    rolledDiceIds: [],
+    usedDiceIds: [],
+    diceOptions: [],
+    validMoves: [],
+    timer: null,
+  };
+}
+
+const singleSixRoom = makeDoubleSixTestRoom();
+const originalRandomForDoubleSix = Math.random;
+try {
+  const singleSixRandomValues = [0.1, 0.5, 0.5];
+  Math.random = () => singleSixRandomValues.shift();
+  doRoll(simultaneousRollIo, singleSixRoom);
+  assert.deepStrictEqual(singleSixRoom.rolledDice, [6, 3]);
+  assert.strictEqual(singleSixRoom.phase, 'move');
+  assert.strictEqual(singleSixRoom.diceOptions.length, 2);
+} finally {
+  Math.random = originalRandomForDoubleSix;
+  if (singleSixRoom.timer) clearTimeout(singleSixRoom.timer);
+}
+
+const doubleSixRoom = makeDoubleSixTestRoom();
+try {
+  const doubleSixRandomValues = [0.1, 0.1];
+  Math.random = () => doubleSixRandomValues.shift();
+  doRoll(simultaneousRollIo, doubleSixRoom);
+  assert.deepStrictEqual(doubleSixRoom.rolledDice, [6, 6]);
+  assert.strictEqual(doubleSixRoom.phase, 'bonus-roll');
+} finally {
+  Math.random = originalRandomForDoubleSix;
+  if (doubleSixRoom.timer) clearTimeout(doubleSixRoom.timer);
+}
+console.log('PASS: only a double six grants an extra roll');
+
+async function testBonusChanceRollsBothDice() {
+  const bonusRoom = makeDoubleSixTestRoom();
+  bonusRoom.phase = 'bonus-roll';
+  bonusRoom.rolledDice = [6, 6];
+  bonusRoom.rolledDiceIds = [0, 1];
+  bonusRoom.dieRollId = 2;
+  const originalRandomForBonusPair = Math.random;
+
+  try {
+    const bonusRandomValues = [0.5, 0.5, 0.5, 0.7];
+    Math.random = () => bonusRandomValues.shift();
+    autoAct(simultaneousRollIo, bonusRoom);
+    Math.random = originalRandomForBonusPair;
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    assert.deepStrictEqual(bonusRoom.rolledDice, [6, 6, 3, 4]);
+    assert.deepStrictEqual(bonusRoom.rolledDiceIds, [0, 1, 2, 3]);
+    assert.strictEqual(bonusRoom.dieRollId, 4);
+    assert.strictEqual(bonusRoom.phase, 'move');
+    assert.deepStrictEqual(
+      bonusRoom.diceOptions.map(({ value }) => value),
+      [6, 6, 3, 4]
+    );
+  } finally {
+    Math.random = originalRandomForBonusPair;
+    if (bonusRoom.timer) clearTimeout(bonusRoom.timer);
+  }
+}
+
+testBonusChanceRollsBothDice()
+  .then(() => console.log('PASS: a double-six bonus chance rolls both dice'))
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+
 const game = engine.createGame(['red', 'yellow'], { tokensToWin: 1 });
 game.captures.red = engine.CAPTURES_TO_UNLOCK_HOME;
 game.tokens.red[0] = 54;
@@ -770,7 +889,7 @@ assert.strictEqual(room.phase, 'over');
 assert.deepStrictEqual(room.usedDiceIds, [room.lastMove.diceId]);
 console.log('PASS: autoAct uses turn planning to finish a multi-dice winning turn');
 
-async function testCaptureBonusSixGrantsAnotherRoll() {
+async function testCaptureBonusRollsBothDice() {
   const captureGame = engine.createGame(['red', 'yellow']);
   captureGame.captures.red = engine.CAPTURES_TO_UNLOCK_HOME;
   captureGame.tokens.red[0] = 10;
@@ -811,17 +930,21 @@ async function testCaptureBonusSixGrantsAnotherRoll() {
     autoAct(captureIo, captureRoom);
     await new Promise((resolve) => setTimeout(resolve, 700));
     assert.strictEqual(captureRoom.phase, 'capture-roll');
+    assert.deepStrictEqual(captureRoom.rolledDice, [6, 6]);
 
-    const secondRollRandomValues = [0.3, 0.2];
+    const secondRollRandomValues = [0.3, 0.2, 0.5, 0.5];
     Math.random = () => secondRollRandomValues.shift();
     autoAct(captureIo, captureRoom);
     await new Promise((resolve) => setTimeout(resolve, 700));
     assert.strictEqual(captureRoom.phase, 'move');
-    assert.deepStrictEqual(captureRoom.rolledDice, [6, 2]);
-    assert.deepStrictEqual(captureRoom.rolledDiceIds, ['capture-1', 'capture-2']);
+    assert.deepStrictEqual(captureRoom.rolledDice, [6, 6, 2, 3]);
+    assert.deepStrictEqual(
+      captureRoom.rolledDiceIds,
+      ['capture-1', 'capture-2', 'capture-3', 'capture-4']
+    );
     assert.deepStrictEqual(
       captureRoom.diceOptions.map(({ value }) => value),
-      [4, 6, 2]
+      [4, 6, 6, 2, 3]
     );
     assert.deepStrictEqual(notices, []);
   } finally {
@@ -830,8 +953,8 @@ async function testCaptureBonusSixGrantsAnotherRoll() {
   }
 }
 
-testCaptureBonusSixGrantsAnotherRoll()
-  .then(() => console.log('PASS: capture bonus 6 grants another roll and keeps available dice'))
+testCaptureBonusRollsBothDice()
+  .then(() => console.log('PASS: capture bonus rolls both dice and keeps available dice'))
   .catch((error) => {
     console.error(error);
     process.exitCode = 1;

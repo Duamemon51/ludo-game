@@ -431,9 +431,9 @@ function autoAct(io, room) {
   if (room.phase === 'roll') {
     doRoll(io, room);
   } else if (room.phase === 'bonus-roll') {
-    rollBonusDie(io, room);
+    rollBonusDice(io, room);
   } else if (room.phase === 'capture-roll') {
-    rollCaptureBonusDie(io, room);
+    rollCaptureBonusDice(io, room);
   } else if (room.phase === 'move') {
     const seat = seatOf(room, room.game.turn);
 
@@ -473,17 +473,19 @@ function forfeitTurnAfterThreeSixes(io, room, color) {
 function doRoll(io, room) {
   const color = room.game.turn;
   const first = rollDiceForCurrentPlayer(room);
+  const second = rollDiceForCurrentPlayer(room);
+  const rolledDice = [first, second];
   room.rollId = (room.rollId || 0) + 1;
-  room.dieRollId = (room.dieRollId || 0) + 1;
-  room.dice = first;
-  room.rolledDice = [first];
-  room.rolledDiceIds = [0];
+  room.dieRollId = (room.dieRollId || 0) + rolledDice.length;
+  room.dice = second;
+  room.rolledDice = rolledDice;
+  room.rolledDiceIds = [0, 1];
   room.usedDiceIds = [];
   room.bonusTurn = false;
   room.diceOptions = [];
   room.validMoves = [];
 
-  if (first === 6) {
+  if (rolledDice.every((value) => value === 6)) {
     room.doubleRoll = true;
     room.phase = 'bonus-roll';
     schedule(io, room);
@@ -492,25 +494,29 @@ function doRoll(io, room) {
   }
 
   room.doubleRoll = false;
-  room.diceOptions = [{
-    id: 0,
-    value: first,
-    moves: engine.getValidMoves(room.game, color, first),
-  }];
-  room.validMoves = room.diceOptions[0].moves;
+  room.diceOptions = rolledDice.map((value, id) => ({
+    id,
+    value,
+    moves: engine.getValidMoves(room.game, color, value),
+  }));
+  room.validMoves = [...new Set(room.diceOptions.flatMap((option) => option.moves))];
   showRollMoves(io, room);
 }
 
-function rollBonusDie(io, room) {
+function rollBonusDice(io, room) {
   if (room.phase !== 'bonus-roll') return;
   clearTimeout(room.timer);
-  const second = rollDiceForCurrentPlayer(room);
+  const bonusDice = [
+    rollDiceForCurrentPlayer(room),
+    rollDiceForCurrentPlayer(room),
+  ];
   const color = room.game.turn;
-  room.dice = second;
   room.rolledDiceIds = room.rolledDiceIds || room.rolledDice.map((_, index) => index);
-  room.rolledDiceIds.push(room.rolledDice.length);
-  room.rolledDice.push(second);
-  room.dieRollId = (room.dieRollId || 0) + 1;
+  const firstBonusId = room.rolledDice.length;
+  room.rolledDiceIds.push(firstBonusId, firstBonusId + 1);
+  room.rolledDice.push(...bonusDice);
+  room.dieRollId = (room.dieRollId || 0) + bonusDice.length;
+  room.dice = bonusDice[bonusDice.length - 1];
   room.pendingDiceOptions = room.rolledDice.map((value, id) => ({
     id,
     value,
@@ -522,15 +528,16 @@ function rollBonusDie(io, room) {
   room.deadline = null;
   broadcast(io, room);
   room.timer = setTimeout(() => {
-    if (second === 6 && room.rolledDice.length < 3) {
+    if (bonusDice.every((value) => value === 6)) {
+      const lastThreeDice = room.rolledDice.slice(-3);
+      if (lastThreeDice.length === 3 && lastThreeDice.every((value) => value === 6)) {
+        forfeitTurnAfterThreeSixes(io, room, color);
+        return;
+      }
+
       room.phase = 'bonus-roll';
       schedule(io, room);
       broadcast(io, room);
-      return;
-    }
-
-    if (second === 6 && room.rolledDice.length === 3) {
-      forfeitTurnAfterThreeSixes(io, room, color);
       return;
     }
 
@@ -785,27 +792,31 @@ function forfeitGame(io, room, seat, socket) {
   return true;
 }
 
-function rollCaptureBonusDie(io, room) {
+function rollCaptureBonusDice(io, room) {
   if (room.phase !== 'capture-roll') return;
   clearTimeout(room.timer);
-  const value = rollDiceForCurrentPlayer(room);
+  const bonusDice = [
+    rollDiceForCurrentPlayer(room),
+    rollDiceForCurrentPlayer(room),
+  ];
   const color = room.game.turn;
-  const diceId = `capture-${(room.rollId || 0) + 1}`;
+  const firstBonusId = (room.rollId || 0) + 1;
+  const bonusDiceIds = bonusDice.map((_, index) => `capture-${firstBonusId + index}`);
   room.rolledDiceIds = room.rolledDiceIds || room.rolledDice.map((_, index) => index);
-  room.rolledDice.push(value);
-  room.rollId = (room.rollId || 0) + 1;
-  room.rolledDiceIds.push(diceId);
-  room.dieRollId = (room.dieRollId || 0) + 1;
-  room.dice = value;
+  room.rolledDice.push(...bonusDice);
+  room.rollId = (room.rollId || 0) + bonusDice.length;
+  room.rolledDiceIds.push(...bonusDiceIds);
+  room.dieRollId = (room.dieRollId || 0) + bonusDice.length;
+  room.dice = bonusDice[bonusDice.length - 1];
   room.diceOptions = [];
   room.validMoves = [];
   room.pendingDiceOptions = [
     ...(room.captureDiceOptions || []),
-    {
-      id: diceId,
+    ...bonusDice.map((value, index) => ({
+      id: bonusDiceIds[index],
       value,
       moves: engine.getValidMoves(room.game, color, value),
-    },
+    })),
   ].map((option) => ({
     ...option,
     moves: engine.getValidMoves(room.game, color, option.value),
@@ -815,9 +826,10 @@ function rollCaptureBonusDie(io, room) {
   room.deadline = null;
   broadcast(io, room);
   room.timer = setTimeout(() => {
-    if (value === 6) {
-      room.captureBonusSixes = (room.captureBonusSixes || 0) + 1;
-      if (room.captureBonusSixes === 3) {
+    if (bonusDice.every((value) => value === 6)) {
+      room.captureBonusSixes = (room.captureBonusSixes || 0) + bonusDice.length;
+      const lastThreeDice = room.rolledDice.slice(-3);
+      if (lastThreeDice.length === 3 && lastThreeDice.every((value) => value === 6)) {
         forfeitTurnAfterThreeSixes(io, room, color);
         return;
       }
@@ -2046,7 +2058,7 @@ function registerHandlers(io, socket) {
     const seat = seatOf(room, socket.data.color);
     if (!seat || seat.socketId !== socket.id || room.game.turn !== seat.color) return;
     restoreSeatControl(seat, socket);
-    rollBonusDie(io, room);
+    rollBonusDice(io, room);
   });
 
   socket.on('roll_capture_bonus', () => {
@@ -2055,7 +2067,7 @@ function registerHandlers(io, socket) {
     const seat = seatOf(room, socket.data.color);
     if (!seat || seat.socketId !== socket.id || room.game.turn !== seat.color) return;
     restoreSeatControl(seat, socket);
-    rollCaptureBonusDie(io, room);
+    rollCaptureBonusDice(io, room);
   });
 
   socket.on('move_token', ({ tokenIdx, diceId } = {}) => {
@@ -2090,7 +2102,7 @@ function registerHandlers(io, socket) {
 
 module.exports = {
   registerHandlers, autoAct, publicState, pickBotName, forfeitGame,
-  rollDiceForCurrentPlayer, takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE,
+  rollDiceForCurrentPlayer, doRoll, takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE,
   pickBotLevel, canStartPrivateRoom, isPrivateRoomStarted, createRoom, advanceTurn,
   isTournamentGroupReady, findReadyTournamentGroup,
   recordHardForcedCapture, findHumanTournamentParticipant, emitTournamentUpdate,
