@@ -21,7 +21,7 @@ const EXPERT_MS = Number(process.env.LUDO_BOT_MS) || 350;
 
 const LEVEL_STRENGTH = {
   expert: 0.95,
-  hard: 0.90,
+  hard: 1,
   medium: 0.75,
   easy: 0.25,
   takeover: 0.10,
@@ -29,7 +29,7 @@ const LEVEL_STRENGTH = {
 
 const QUICK_LEVEL_STRENGTH = {
   expert: 1,
-  hard: 0.85,
+  hard: 1,
   medium: 0.75,
   easy: 0.23,
   takeover: 0.10,
@@ -37,7 +37,7 @@ const QUICK_LEVEL_STRENGTH = {
 
 const NORMAL_LEVEL_STRENGTH = {
   expert: 1,
-  hard: 0.85,
+  hard: 1,
   medium: 0.75,
   easy: 0.25,
   takeover: 0.10,
@@ -61,7 +61,7 @@ function selectPlan(candidates, level = 'medium', strengthOverride) {
   const best = candidates[0];
   const strength = strengthOverride ?? LEVEL_STRENGTH[normalizeLevel(level)];
 
-  if (candidates.length === 1 || Math.random() < strength) {
+  if (candidates.length === 1 || strength >= 1 || Math.random() < strength) {
     return best;
   }
 
@@ -189,9 +189,7 @@ function scoringMove(state, color, dice, moves) {
   let bestScore = -Infinity;
 
   for (const tokenIdx of moves) {
-    const score =
-      scoreMove(state, color, tokenIdx, dice) +
-      Math.random() * 2;
+    const score = scoreMove(state, color, tokenIdx, dice);
 
     if (score > bestScore) {
       bestScore = score;
@@ -255,7 +253,8 @@ function hitRisk(state, color, rel) {
     }
   }
 
-  return hits.size / 6;
+  const oneDieChance = hits.size / 6;
+  return 1 - ((1 - oneDieChance) ** 2);
 }
 
 /* -------------------------------------------------- */
@@ -404,10 +403,7 @@ function evaluateExpertReply(state, me) {
 
 function evaluatePlanPosition(state, me, level) {
   const positionValue = evaluate(state, me);
-  if (level === 'expert') return evaluateExpertReply(state, me);
-  if (level === 'hard') {
-    return positionValue * 0.35 + evaluateExpertReply(state, me) * 0.65;
-  }
+  if (level === 'expert' || level === 'hard') return evaluateExpertReply(state, me);
   if (level === 'medium') {
     return positionValue * 0.65 + evaluateExpertReply(state, me) * 0.35;
   }
@@ -607,27 +603,80 @@ function chooseTurnMove(
     id,
     value,
   }));
-  const canCaptureThisTurn = options.some(({ value }) =>
-    getValidMoves(state, color, value).some((tokenIdx) => {
+  const captureMoveKeys = new Set();
+
+  for (const { id, value } of options) {
+    for (const tokenIdx of getValidMoves(state, color, value)) {
       const next = cloneState(state);
-      return applyMove(next, color, tokenIdx, value).captured.length > 0;
-    })
-  );
+      const result = applyMove(next, color, tokenIdx, value);
+      const moveKey = `${id}:${tokenIdx}`;
+
+      if (result.captured.length > 0) captureMoveKeys.add(moveKey);
+    }
+  }
+  const canCaptureThisTurn = captureMoveKeys.size > 0;
+  const planPositionCache = new Map();
+
+  function getPlanPositionValue(current) {
+    const key = current.colors
+      .map((playerColor) =>
+        `${current.captures[playerColor]}:${current.tokens[playerColor].join(',')}`
+      )
+      .join(';');
+    if (planPositionCache.has(key)) return planPositionCache.get(key);
+
+    const positionValue = evaluatePlanPosition(current, color, level);
+    const captureSetup = level === 'expert' && !canCaptureThisTurn
+      ? captureSetupScore(current, color)
+      : 0;
+    const value = positionValue + captureSetup;
+    planPositionCache.set(key, value);
+    return value;
+  }
 
   // Keep the best complete-turn plan for each possible first move.
   const candidateMap = new Map();
 
-  function saveCandidate(firstMove, value) {
+  function saveCandidate(
+    firstMove,
+    value,
+    isWinningPlan = false,
+    hasCapture = false,
+    firstMoveCaptures = false
+  ) {
     if (!firstMove) return;
 
     const key = `${firstMove.id}:${firstMove.tokenIdx}`;
 
     const existing = candidateMap.get(key);
 
-    if (!existing || value > existing.value) {
+    if (
+      !existing
+      || (isWinningPlan && !existing.isWinningPlan)
+      || (
+        isWinningPlan === existing.isWinningPlan
+        && hasCapture
+        && !existing.hasCapture
+      )
+      || (
+        isWinningPlan === existing.isWinningPlan
+        && hasCapture === existing.hasCapture
+        && firstMoveCaptures
+        && !existing.firstMoveCaptures
+      )
+      || (
+        isWinningPlan === existing.isWinningPlan
+        && hasCapture === existing.hasCapture
+        && firstMoveCaptures === existing.firstMoveCaptures
+        && value > existing.value
+      )
+    ) {
       candidateMap.set(key, {
         firstMove,
         value,
+        isWinningPlan,
+        hasCapture,
+        firstMoveCaptures,
       });
     }
   }
@@ -636,14 +685,19 @@ function chooseTurnMove(
     current,
     remaining,
     firstMove,
-    tacticalScore
+    tacticalScore,
+    hasCapture,
+    firstMoveCaptures
   ) {
     if (current.winner) {
       saveCandidate(
         firstMove,
         current.winner === color
           ? 100000 + tacticalScore
-          : -100000 + tacticalScore
+          : -100000 + tacticalScore,
+        current.winner === color,
+        hasCapture,
+        firstMoveCaptures
       );
 
       return;
@@ -663,13 +717,12 @@ function chooseTurnMove(
     // No remaining usable dice.
     if (choices.length === 0) {
       if (firstMove) {
-        const positionValue = evaluatePlanPosition(current, color, level);
-        const captureSetup = level === 'expert' && !canCaptureThisTurn
-          ? captureSetupScore(current, color)
-          : 0;
         saveCandidate(
           firstMove,
-          positionValue + captureSetup + tacticalScore
+          getPlanPositionValue(current) + tacticalScore,
+          false,
+          hasCapture,
+          firstMoveCaptures
         );
       }
 
@@ -679,7 +732,7 @@ function chooseTurnMove(
     for (const choice of choices) {
       const next = cloneState(current);
 
-      applyMove(
+      const result = applyMove(
         next,
         color,
         choice.tokenIdx,
@@ -706,7 +759,9 @@ function chooseTurnMove(
         next,
         nextRemaining,
         nextFirstMove,
-        tacticalScore + moveScore * 0.15
+        tacticalScore + moveScore * 0.15,
+        hasCapture || result.captured.length > 0,
+        firstMove ? firstMoveCaptures : result.captured.length > 0
       );
     }
   }
@@ -715,10 +770,24 @@ function chooseTurnMove(
     state,
     options,
     null,
-    0
+    0,
+    false,
+    false
   );
 
-  const candidates = Array.from(candidateMap.values());
+  const allCandidates = Array.from(candidateMap.values());
+  const winningCandidates = allCandidates.filter(({ isWinningPlan }) => isWinningPlan);
+  const capturingCandidates = allCandidates.filter(({ hasCapture }) => hasCapture);
+  const immediateCapturingCandidates = capturingCandidates.filter(
+    ({ firstMoveCaptures }) => firstMoveCaptures
+  );
+  const candidates = winningCandidates.length > 0
+    ? winningCandidates
+    : level === 'expert' && capturingCandidates.length > 0
+      ? immediateCapturingCandidates.length > 0
+        ? immediateCapturingCandidates
+        : capturingCandidates
+      : allCandidates;
   const strength = state.tokensToWin === 1
     ? QUICK_LEVEL_STRENGTH[level]
     : NORMAL_LEVEL_STRENGTH[level];
@@ -732,6 +801,57 @@ function chooseTurnMove(
   return selected
     ? selected.firstMove
     : null;
+}
+
+function findCaptureDicePair(state, color) {
+  let bestPair = null;
+  let bestScore = -Infinity;
+
+  for (let first = 1; first <= 6; first++) {
+    for (let second = first; second <= 6; second++) {
+      let pairScore = -Infinity;
+
+      function search(current, remaining, captureScore) {
+        const choices = remaining.flatMap(({ id, value }) =>
+          getValidMoves(current, color, value).map((tokenIdx) => ({
+            id,
+            value,
+            tokenIdx,
+          }))
+        );
+
+        for (const choice of choices) {
+          const next = cloneState(current);
+          const moveScore = scoreMove(current, color, choice.tokenIdx, choice.value);
+          const result = applyMove(next, color, choice.tokenIdx, choice.value);
+          const nextCaptureScore = captureScore + (
+            result.captured.length > 0 ? moveScore : 0
+          );
+
+          if (result.captured.length > 0) {
+            pairScore = Math.max(pairScore, nextCaptureScore);
+          }
+
+          if (next.winner === color) continue;
+
+          search(
+            next,
+            remaining.filter(({ id }) => id !== choice.id),
+            nextCaptureScore
+          );
+        }
+      }
+
+      search(state, [{ id: 0, value: first }, { id: 1, value: second }], 0);
+
+      if (pairScore > bestScore) {
+        bestScore = pairScore;
+        bestPair = [first, second];
+      }
+    }
+  }
+
+  return bestPair;
 }
 
 /* -------------------------------------------------- */
@@ -758,7 +878,7 @@ function chooseMove(
 
   level = normalizeLevel(level);
 
-  if (level === 'expert') {
+  if (level === 'expert' || level === 'hard') {
     return searchMove(
       state,
       color,
@@ -766,17 +886,6 @@ function chooseMove(
       moves,
       8,
       EXPERT_MS
-    );
-  }
-
-  if (level === 'hard') {
-    return searchMove(
-      state,
-      color,
-      dice,
-      moves,
-      2,
-      120
     );
   }
 
@@ -807,6 +916,7 @@ function chooseMove(
 module.exports = {
   chooseMove,
   chooseTurnMove,
+  findCaptureDicePair,
   scoreMove,
   isThreatened,
   evaluateExpertReply,

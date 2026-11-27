@@ -1,5 +1,9 @@
 const engine = require('../game/engine');
-const { chooseTurnMove, scoreMove } = require('../game/bot');
+const {
+  chooseTurnMove,
+  findCaptureDicePair,
+  scoreMove,
+} = require('../game/bot');
 const { randomUUID } = require('node:crypto');
 const { WagerError, createWageredMatch, settleWageredMatch, refundWageredMatch } = require('../game/wager');
 const {
@@ -30,7 +34,8 @@ const MAX_MISSED = 1;
 const RECONNECT_MS = 60000; // how long an empty room waits for players to come back
 const GAME_CHAT_ENABLED = false;
 const MIN_BET = 30;
-const HUMAN_SIX_CHANCE = 0.20;
+const HUMAN_PAIR_SIX_CHANCE = 0.22;
+const HUMAN_SIX_CHANCE = 1 - Math.sqrt(1 - HUMAN_PAIR_SIX_CHANCE);
 const BOT_SIX_CHANCE = {
   expert: 0.65,
   hard: 0.5,
@@ -180,16 +185,7 @@ function findCaptureDice(game, color, maxDice = 6) {
   for (let dice = 1; dice <= maxDice; dice++) {
     const moves = engine.getValidMoves(game, color, dice);
     for (const tokenIdx of moves) {
-      const state = {
-        ...game,
-        tokens: Object.fromEntries(
-          game.colors.map((playerColor) => [
-            playerColor,
-            game.tokens[playerColor].slice(),
-          ])
-        ),
-        captures: { ...game.captures },
-      };
+      const state = cloneGameState(game);
       if (engine.applyMove(state, color, tokenIdx, dice).captured.length === 0) continue;
 
       const score = scoreMove(game, color, tokenIdx, dice);
@@ -202,7 +198,37 @@ function findCaptureDice(game, color, maxDice = 6) {
   return bestDice;
 }
 
-function rollDiceForCurrentPlayer(room) {
+function cloneGameState(game) {
+  return {
+    ...game,
+    tokens: Object.fromEntries(
+      game.colors.map((color) => [color, game.tokens[color].slice()])
+    ),
+    captures: { ...game.captures },
+  };
+}
+
+function canCaptureWithDice(game, color, diceValues) {
+  function search(state, remaining) {
+    for (let index = 0; index < remaining.length; index++) {
+      const dice = remaining[index];
+      for (const tokenIdx of engine.getValidMoves(state, color, dice)) {
+        const next = cloneGameState(state);
+        const result = engine.applyMove(next, color, tokenIdx, dice);
+        if (result.captured.length > 0) return true;
+
+        const nextRemaining = remaining.filter((_, remainingIndex) => remainingIndex !== index);
+        if (search(next, nextRemaining)) return true;
+      }
+    }
+
+    return false;
+  }
+
+  return search(game, diceValues);
+}
+
+function rollDiceForCurrentPlayer(room, forcedDice = null) {
   const seat = seatOf(room, room.game.turn);
   if (!seat?.isBot) {
     if (Math.random() < HUMAN_SIX_CHANCE) return 6;
@@ -236,6 +262,8 @@ function rollDiceForCurrentPlayer(room) {
     return value;
   };
 
+  if (forcedDice !== null) return finishBotRoll(forcedDice);
+
   const consecutiveSixes = (
     room.phase === 'bonus-roll'
     && room.rolledDice.slice(-2).length === 2
@@ -267,9 +295,9 @@ function rollDiceForCurrentPlayer(room) {
     const captureDice = findCaptureDice(
       room.game,
       seat.color,
-      consecutiveSixes
-        || expertSixCooldown > 0
-        || hardMediumSixCooldown > 0
+      seat.level === 'expert'
+        ? 6
+        : consecutiveSixes || hardMediumSixCooldown > 0
         ? 5
         : 6
     );
@@ -302,6 +330,17 @@ function rollDiceForCurrentPlayer(room) {
   }
 
   return finishBotRoll(5);
+}
+
+function rollDicePairForCurrentPlayer(room) {
+  const seat = seatOf(room, room.game.turn);
+  const capturePair = seat?.level === 'expert'
+    ? findCaptureDicePair(room.game, seat.color)
+    : null;
+
+  return capturePair
+    ? capturePair.map((dice) => rollDiceForCurrentPlayer(room, dice))
+    : [rollDiceForCurrentPlayer(room), rollDiceForCurrentPlayer(room)];
 }
 
 function pickBotName(usedNames, level = 'expert') {
@@ -472,12 +511,10 @@ function forfeitTurnAfterThreeSixes(io, room, color) {
 
 function doRoll(io, room) {
   const color = room.game.turn;
-  const first = rollDiceForCurrentPlayer(room);
-  const second = rollDiceForCurrentPlayer(room);
-  const rolledDice = [first, second];
+  const rolledDice = rollDicePairForCurrentPlayer(room);
   room.rollId = (room.rollId || 0) + 1;
   room.dieRollId = (room.dieRollId || 0) + rolledDice.length;
-  room.dice = second;
+  room.dice = rolledDice[rolledDice.length - 1];
   room.rolledDice = rolledDice;
   room.rolledDiceIds = [0, 1];
   room.usedDiceIds = [];
@@ -485,7 +522,9 @@ function doRoll(io, room) {
   room.diceOptions = [];
   room.validMoves = [];
 
-  if (rolledDice.every((value) => value === 6)) {
+  const expertCaptureAvailable = seatOf(room, color)?.level === 'expert'
+    && canCaptureWithDice(room.game, color, rolledDice);
+  if (rolledDice.every((value) => value === 6) && !expertCaptureAvailable) {
     room.doubleRoll = true;
     room.phase = 'bonus-roll';
     schedule(io, room);
@@ -507,8 +546,7 @@ function rollBonusDice(io, room) {
   if (room.phase !== 'bonus-roll') return;
   clearTimeout(room.timer);
   const bonusDice = [
-    rollDiceForCurrentPlayer(room),
-    rollDiceForCurrentPlayer(room),
+    ...rollDicePairForCurrentPlayer(room),
   ];
   const color = room.game.turn;
   room.rolledDiceIds = room.rolledDiceIds || room.rolledDice.map((_, index) => index);
@@ -528,7 +566,13 @@ function rollBonusDice(io, room) {
   room.deadline = null;
   broadcast(io, room);
   room.timer = setTimeout(() => {
-    if (bonusDice.every((value) => value === 6)) {
+    const expertCaptureAvailable = seatOf(room, color)?.level === 'expert'
+      && canCaptureWithDice(
+        room.game,
+        color,
+        room.pendingDiceOptions.map((option) => option.value)
+      );
+    if (bonusDice.every((value) => value === 6) && !expertCaptureAvailable) {
       const lastThreeDice = room.rolledDice.slice(-3);
       if (lastThreeDice.length === 3 && lastThreeDice.every((value) => value === 6)) {
         forfeitTurnAfterThreeSixes(io, room, color);
@@ -621,7 +665,8 @@ function doMove(io, room, tokenIdx, diceId) {
     return;
   }
 
-  if (result.captured.length > 0) {
+  const earnedBonusRoll = result.captured.length > 0 || result.reachedFinish;
+  if (earnedBonusRoll) {
     room.captureDiceOptions = room.diceOptions;
     room.captureBonusSixes = 0;
     room.diceOptions = [];
@@ -637,7 +682,7 @@ function doMove(io, room, tokenIdx, diceId) {
 
   const to = room.game.tokens[color][tokenIdx];
   room.timer = setTimeout(() => {
-    if (result.captured.length > 0) {
+    if (earnedBonusRoll) {
       room.dice = null;
       room.phase = 'capture-roll';
       schedule(io, room);
@@ -796,8 +841,7 @@ function rollCaptureBonusDice(io, room) {
   if (room.phase !== 'capture-roll') return;
   clearTimeout(room.timer);
   const bonusDice = [
-    rollDiceForCurrentPlayer(room),
-    rollDiceForCurrentPlayer(room),
+    ...rollDicePairForCurrentPlayer(room),
   ];
   const color = room.game.turn;
   const firstBonusId = (room.rollId || 0) + 1;
@@ -826,20 +870,32 @@ function rollCaptureBonusDice(io, room) {
   room.deadline = null;
   broadcast(io, room);
   room.timer = setTimeout(() => {
+    const expertCaptureAvailable = seatOf(room, color)?.level === 'expert'
+      && canCaptureWithDice(
+        room.game,
+        color,
+        room.pendingDiceOptions.map((option) => option.value)
+      );
     if (bonusDice.every((value) => value === 6)) {
       room.captureBonusSixes = (room.captureBonusSixes || 0) + bonusDice.length;
       const lastThreeDice = room.rolledDice.slice(-3);
-      if (lastThreeDice.length === 3 && lastThreeDice.every((value) => value === 6)) {
+      if (
+        lastThreeDice.length === 3
+        && lastThreeDice.every((value) => value === 6)
+        && !expertCaptureAvailable
+      ) {
         forfeitTurnAfterThreeSixes(io, room, color);
         return;
       }
 
-      room.captureDiceOptions = room.pendingDiceOptions;
-      room.pendingDiceOptions = [];
-      room.phase = 'capture-roll';
-      schedule(io, room);
-      broadcast(io, room);
-      return;
+      if (!expertCaptureAvailable) {
+        room.captureDiceOptions = room.pendingDiceOptions;
+        room.pendingDiceOptions = [];
+        room.phase = 'capture-roll';
+        schedule(io, room);
+        broadcast(io, room);
+        return;
+      }
     }
 
     room.captureBonusSixes = 0;
@@ -2102,7 +2158,7 @@ function registerHandlers(io, socket) {
 
 module.exports = {
   registerHandlers, autoAct, publicState, pickBotName, forfeitGame,
-  rollDiceForCurrentPlayer, doRoll, takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE,
+  rollDiceForCurrentPlayer, doRoll, doMove, takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE,
   pickBotLevel, canStartPrivateRoom, isPrivateRoomStarted, createRoom, advanceTurn,
   isTournamentGroupReady, findReadyTournamentGroup,
   recordHardForcedCapture, findHumanTournamentParticipant, emitTournamentUpdate,

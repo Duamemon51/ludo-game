@@ -2,7 +2,7 @@ const assert = require('assert');
 const engine = require('../game/engine');
 const { calculateWager } = require('../game/wager');
 const {
-  registerHandlers, autoAct, publicState, pickBotName, forfeitGame, rollDiceForCurrentPlayer, doRoll,
+  registerHandlers, autoAct, publicState, pickBotName, forfeitGame, rollDiceForCurrentPlayer, doRoll, doMove,
   takeOverDisconnectedSeat, restoreSeatControl, BOT_NAMES, HUMAN_SIX_CHANCE, pickBotLevel,
   canStartPrivateRoom, isPrivateRoomStarted, createRoom, advanceTurn,
   isTournamentGroupReady, findReadyTournamentGroup, recordHardForcedCapture,
@@ -446,6 +446,69 @@ try {
     seats: [{ color: 'red', isBot: true, level: 'expert' }],
   }), 3, 'bot should guarantee the die value needed to capture');
 
+  const sixCaptureGame = engine.createGame(['red', 'yellow']);
+  sixCaptureGame.captures.red = engine.CAPTURES_TO_UNLOCK_HOME;
+  sixCaptureGame.tokens.red[0] = 10;
+  sixCaptureGame.tokens.yellow[0] = 42;
+  Math.random = () => 0.999;
+  assert.strictEqual(rollDiceForCurrentPlayer({
+    game: sixCaptureGame,
+    seats: [{ color: 'red', isBot: true, level: 'expert', sixCooldown: 1 }],
+  }), 6, 'expert should force a capture with 6 despite its six cooldown');
+
+  const expertSixCaptureRoom = {
+    id: 'expert-six-capture-test',
+    game: sixCaptureGame,
+    seats: [{ color: 'red', isBot: true, level: 'expert', sixCooldown: 1 }],
+    phase: 'roll',
+    dice: null,
+    dieRollId: 0,
+    rollId: 0,
+    rolledDice: [],
+    rolledDiceIds: [],
+    usedDiceIds: [],
+    diceOptions: [],
+    validMoves: [],
+    timer: null,
+  };
+  Math.random = () => 0.999;
+  doRoll({ to: () => ({ emit: () => {} }) }, expertSixCaptureRoom);
+  assert.ok(expertSixCaptureRoom.rolledDice.includes(6));
+  assert.strictEqual(expertSixCaptureRoom.phase, 'move');
+  assert.strictEqual(expertSixCaptureRoom.doubleRoll, false);
+  assert.ok(
+    expertSixCaptureRoom.diceOptions.some((option) => option.moves.includes(0)),
+    'expert should be able to take the forced six capture before a double-six bonus'
+  );
+  if (expertSixCaptureRoom.timer) clearTimeout(expertSixCaptureRoom.timer);
+
+  const sequenceCaptureGame = engine.createGame(['red', 'yellow']);
+  sequenceCaptureGame.tokens.red[0] = 2;
+  sequenceCaptureGame.tokens.yellow[0] = 35;
+  const expertSequenceCaptureRoom = {
+    id: 'expert-sequence-capture-test',
+    game: sequenceCaptureGame,
+    seats: [{ color: 'red', isBot: true, level: 'expert' }],
+    phase: 'roll',
+    dice: null,
+    dieRollId: 0,
+    rollId: 0,
+    rolledDice: [],
+    rolledDiceIds: [],
+    usedDiceIds: [],
+    diceOptions: [],
+    validMoves: [],
+    timer: null,
+  };
+  Math.random = () => 0.999;
+  doRoll({ to: () => ({ emit: () => {} }) }, expertSequenceCaptureRoom);
+  assert.strictEqual(
+    expertSequenceCaptureRoom.rolledDice[0] + expertSequenceCaptureRoom.rolledDice[1],
+    7
+  );
+  assert.strictEqual(expertSequenceCaptureRoom.phase, 'move');
+  if (expertSequenceCaptureRoom.timer) clearTimeout(expertSequenceCaptureRoom.timer);
+
   Math.random = () => 0.999;
   assert.strictEqual(rollDiceForCurrentPlayer({
     game: captureGame,
@@ -487,15 +550,19 @@ try {
   assert.strictEqual(rollDiceForCurrentPlayer({
     game: engine.createGame(['red', 'yellow']),
     seats: [{ color: 'red', isBot: false, level: 'medium' }],
-  }), 6, 'human dice should roll 6 within the configured 20% chance');
+  }), 6, 'human dice should roll 6 within the configured per-die chance');
 
   const humanRollValues = [HUMAN_SIX_CHANCE, 0.999];
   Math.random = () => humanRollValues.shift();
   assert.strictEqual(rollDiceForCurrentPlayer({
     game: engine.createGame(['red', 'yellow']),
     seats: [{ color: 'red', isBot: false, level: 'medium' }],
-  }), 5, 'human rolls outside the 20% six chance should produce a non-six');
-  console.log('PASS: bots keep their configured six chances and humans have a 20% six chance');
+  }), 5, 'human rolls outside the per-die six chance should produce a non-six');
+  assert.ok(
+    Math.abs(1 - ((1 - HUMAN_SIX_CHANCE) ** 2) - 0.22) < 1e-12,
+    'two human dice should have a 22% chance of at least one six'
+  );
+  console.log('PASS: bots keep their configured six chances and human paired dice have a 22% six chance');
 } finally {
   Math.random = originalRandomForDiceTest;
 }
@@ -953,8 +1020,62 @@ async function testCaptureBonusRollsBothDice() {
   }
 }
 
+async function testFinishBonusRollsBeforeMovingAgain() {
+  const game = engine.createGame(['red', 'yellow']);
+  game.captures.red = engine.CAPTURES_TO_UNLOCK_HOME;
+  game.tokens.red[0] = engine.FINISH - 1;
+  const room = {
+    id: 'finish-bonus-test',
+    game,
+    phase: 'move',
+    dice: 6,
+    diceOptions: [
+      { id: 0, value: 1, moves: [0] },
+      { id: 1, value: 6, moves: [1] },
+    ],
+    pendingDiceOptions: [],
+    captureDiceOptions: [],
+    rolledDice: [1, 6],
+    rolledDiceIds: [0, 1],
+    usedDiceIds: [],
+    validMoves: [0, 1],
+    seats: [{ color: 'red', name: 'Human', isBot: false, level: 'medium', missed: 0 }],
+    timer: null,
+    deadline: null,
+    rollId: 1,
+    dieRollId: 2,
+    captureBonusSixes: 0,
+    bonusTurn: false,
+  };
+  const io = { to: () => ({ emit: () => {} }) };
+  const originalRandomForFinishTest = Math.random;
+
+  try {
+    doMove(io, room, 0, 0);
+    assert.deepStrictEqual(room.captureDiceOptions.map(({ value }) => value), [6]);
+    assert.strictEqual(room.bonusTurn, false);
+
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    assert.strictEqual(room.phase, 'capture-roll');
+
+    Math.random = () => 0.999;
+    autoAct(io, room);
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    assert.strictEqual(room.phase, 'move');
+    assert.deepStrictEqual(
+      room.diceOptions.map(({ value }) => value),
+      [6, 5, 5]
+    );
+  } finally {
+    Math.random = originalRandomForFinishTest;
+    if (room.timer) clearTimeout(room.timer);
+  }
+}
+
 testCaptureBonusRollsBothDice()
   .then(() => console.log('PASS: capture bonus rolls both dice and keeps available dice'))
+  .then(testFinishBonusRollsBeforeMovingAgain)
+  .then(() => console.log('PASS: finishing a token rolls the bonus dice before the next move'))
   .catch((error) => {
     console.error(error);
     process.exitCode = 1;

@@ -1,6 +1,12 @@
 const assert = require('assert');
 const engine = require('./engine');
-const { chooseMove, chooseTurnMove, evaluateExpertReply, scoreMove } = require('./bot');
+const {
+  chooseMove,
+  chooseTurnMove,
+  evaluateExpertReply,
+  findCaptureDicePair,
+  scoreMove,
+} = require('./bot');
 
 // Test 1: bot prefers a capture
 let s = engine.createGame(['red', 'yellow']);
@@ -45,6 +51,36 @@ assert.deepStrictEqual(
   { tokenIdx: 1, id: 0 }
 );
 console.log("PASS: expert prioritizes capturing the opponent's most advanced token");
+
+// Expert takes a legal capture over a non-winning move into home.
+s = engine.createGame(['red', 'yellow']);
+s.captures.red = engine.CAPTURES_TO_UNLOCK_HOME;
+s.tokens.red = [2, 54, -1, -1];
+s.tokens.yellow[0] = 31;
+assert.deepStrictEqual(
+  chooseTurnMove(s, 'red', [{ id: 0, value: 1 }, { id: 1, value: 3 }], 'expert'),
+  { tokenIdx: 0, id: 1 }
+);
+console.log('PASS: expert always captures when a legal capture is available');
+
+// Expert can use both dice in sequence to reach and capture a target seven spaces away.
+s = engine.createGame(['red', 'yellow']);
+s.tokens.red[0] = 2;
+s.tokens.yellow[0] = 35;
+const capturePair = findCaptureDicePair(s, 'red');
+assert.strictEqual(capturePair[0] + capturePair[1], 7);
+let captureDiceOptions = capturePair.map((value, id) => ({ id, value }));
+let capturedInTurn = false;
+while (captureDiceOptions.length > 0) {
+  const plannedMove = chooseTurnMove(s, 'red', captureDiceOptions, 'expert');
+  if (!plannedMove) break;
+  const option = captureDiceOptions.find(({ id }) => id === plannedMove.id);
+  const result = engine.applyMove(s, 'red', plannedMove.tokenIdx, option.value);
+  capturedInTurn = capturedInTurn || result.captured.length > 0;
+  captureDiceOptions = captureDiceOptions.filter(({ id }) => id !== plannedMove.id);
+}
+assert.ok(capturedInTurn, 'expert should capture using a two-die sequence');
+console.log('PASS: expert forces paired dice to capture targets beyond one-die range');
 
 // Before unlocking the home lane, expert moves toward opponents it can capture.
 s = engine.createGame(['red', 'yellow']);
@@ -98,7 +134,26 @@ try {
 assert.strictEqual(s.winner, 'red');
 console.log('PASS: multi-dice planner finds a winning sequence');
 
-// Medium usually takes the best-scored plan, but occasionally chooses an alternative.
+// Hard and expert use the same search without depending on randomness.
+const noRandomGame = engine.createGame(['red', 'yellow']);
+noRandomGame.tokens.red = [0, 1, -1, -1];
+noRandomGame.tokens.yellow[0] = 0;
+const originalRandomForHardTest = Math.random;
+try {
+  Math.random = () => { throw new Error('Hard move selection must be deterministic'); };
+  const hardPlan = chooseTurnMove(noRandomGame, 'red', [{ id: 0, value: 1 }], 'hard');
+  assert.deepStrictEqual(hardPlan, { tokenIdx: 1, id: 0 });
+  assert.deepStrictEqual(
+    chooseTurnMove(noRandomGame, 'red', [{ id: 0, value: 1 }], 'expert'),
+    hardPlan
+  );
+  assert.ok(Number.isInteger(chooseMove(noRandomGame, 'red', 1, 'hard')));
+} finally {
+  Math.random = originalRandomForHardTest;
+}
+console.log('PASS: hard and expert use the same deterministic search plan');
+
+// Hard and expert choose the best-scored plan; lower levels retain some randomness.
 const quickGame = engine.createGame(['red', 'yellow'], { tokensToWin: 1 });
 quickGame.tokens.red = [0, 1, -1, -1];
 quickGame.tokens.yellow[0] = 0;
@@ -107,7 +162,7 @@ const originalRandomForQuickTest = Math.random;
 try {
   for (const [level, quickThreshold] of [
     ['expert', 0.999],
-    ['hard', 0.729],
+    ['hard', 0.999],
     ['medium', 0.749],
     ['easy', 0.229],
     ['takeover', 0.099],
@@ -119,7 +174,7 @@ try {
       `Quick ${level} should select the best-scored plan at its configured threshold`
     );
     Math.random = () => 0.999;
-    const expectedTokenIdx = level === 'expert' ? 1 : 0;
+    const expectedTokenIdx = ['expert', 'hard'].includes(level) ? 1 : 0;
     assert.deepStrictEqual(
       chooseTurnMove(normalGame, 'red', [{ id: 0, value: 1 }], level),
       { tokenIdx: expectedTokenIdx, id: 0 },
@@ -129,7 +184,7 @@ try {
 } finally {
   Math.random = originalRandomForQuickTest;
 }
-console.log('PASS: medium uses a 75% best-plan chance in Quick and Normal matches');
+console.log('PASS: hard and expert select the best plan while lower levels retain randomness');
 
 // Test 3: bot returns null when it has no moves
 s = engine.createGame(['red', 'yellow']);
