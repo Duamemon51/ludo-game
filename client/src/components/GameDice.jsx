@@ -20,7 +20,7 @@ const CUBE = [
 const ROLL_MS = 850;
 
 export default function GameDice({
-  value, color, canRoll, onRoll, rollId, soundMuted, onRollSettled,
+  value, color, canRoll, onRoll, rollId, soundMuted, onRollSettled, rollHintOffset = 0,
 }) {
   const [settledRoll, setSettledRoll] = useState(null);
   const diceAudio = useRef(null);
@@ -83,6 +83,7 @@ export default function GameDice({
       style={{
         '--c': color ? COLORS[color] : '#9ca3af',
         '--roll': `${ROLL_MS}ms`,
+        '--roll-hint-offset': `${rollHintOffset}px`,
         '--face-x': `${x}deg`,
         '--face-y': `${y}deg`,
       }}
@@ -111,7 +112,7 @@ export default function GameDice({
         .gd.can-roll::before,
         .gd.can-roll::after {
           content: "";
-          position: absolute; left: 50%; top: -38px;
+          position: absolute; left: calc(50% + var(--roll-hint-offset)); top: -38px;
           width: 28px; height: 28px; margin-left: -14px;
           border-radius: 50%; box-sizing: border-box;
           pointer-events: none;

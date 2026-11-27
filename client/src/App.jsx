@@ -813,7 +813,6 @@ export default function App() {
         active={active}
         isMe={color === myColor}
         pct={pct}
-        dice={game.dice}
         diceRollId={game.dieRollId}
         rolledDice={game.rolledDice || []}
         rolledDiceIds={game.rolledDiceIds}

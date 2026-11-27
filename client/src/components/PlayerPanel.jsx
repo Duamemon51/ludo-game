@@ -29,7 +29,7 @@ function MiniDie({ value, latest }) {
 }
 
 export default function PlayerPanel({
-  seat, vertical, side, active, isMe, pct, dice, diceRollId, rolledDice, rolledDiceIds, usedDiceIds = [], canRoll, onRoll, onChat, chatEnabled, bubble, soundMuted, avatar, onDisableAutoMode,
+  seat, vertical, side, active, isMe, pct, diceRollId, rolledDice, rolledDiceIds, usedDiceIds = [], canRoll, onRoll, onChat, chatEnabled, bubble, soundMuted, avatar, onDisableAutoMode,
 }) {
   const historyRef = useRef(null);
   const [settledDiceRollId, setSettledDiceRollId] = useState(0);
@@ -37,6 +37,18 @@ export default function PlayerPanel({
     setSettledDiceRollId((current) => Math.max(current, rollId));
   }, []);
   const firstHistoryRollId = diceRollId - rolledDice.length + 1;
+  const activeDice = rolledDice.length
+    ? rolledDice
+      .map((value, index) => ({
+        value,
+        id: rolledDiceIds?.[index] ?? index,
+        rollId: firstHistoryRollId + index,
+      }))
+      .slice(-2)
+    : [
+      { value: null, id: 0, rollId: null },
+      { value: null, id: 1, rollId: null },
+    ];
   const visibleRolls = rolledDice
     .map((value, index) => ({
       value,
@@ -78,6 +90,7 @@ export default function PlayerPanel({
         }
         .roll-history::-webkit-scrollbar { display: none; }
         .panel.right .roll-history { left: auto; right: 0; }
+        .panel-dice { display: flex; align-items: center; gap: 8px; }
 
         .rh-die {
           flex: none;
@@ -153,15 +166,21 @@ export default function PlayerPanel({
         />
 
         {active && (
-          <GameDice
-            value={dice}
-            rollId={diceRollId}
-            color={seat.color}
-            canRoll={canRoll}
-            soundMuted={soundMuted}
-            onRollSettled={onRollSettled}
-            onRoll={onRoll}
-          />
+          <div className="panel-dice">
+            {activeDice.map(({ value, id, rollId }, index) => (
+              <GameDice
+                key={id}
+                value={value}
+                rollId={rollId}
+                color={seat.color}
+                canRoll={canRoll && index === activeDice.length - 1}
+                rollHintOffset={activeDice.length === 2 && index === activeDice.length - 1 ? -24 : 0}
+                soundMuted={soundMuted || index !== activeDice.length - 1}
+                onRollSettled={onRollSettled}
+                onRoll={onRoll}
+              />
+            ))}
+          </div>
         )}
       </div>
 
