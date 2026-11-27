@@ -559,10 +559,10 @@ try {
     seats: [{ color: 'red', isBot: false, level: 'medium' }],
   }), 5, 'human rolls outside the per-die six chance should produce a non-six');
   assert.ok(
-    Math.abs(1 - ((1 - HUMAN_SIX_CHANCE) ** 2) - 0.22) < 1e-12,
-    'two human dice should have a 22% chance of at least one six'
+    Math.abs(1 - ((1 - HUMAN_SIX_CHANCE) ** 2) - 0.36) < 1e-12,
+    'two human dice should have a 36% chance of at least one six'
   );
-  console.log('PASS: bots keep their configured six chances and human paired dice have a 22% six chance');
+  console.log('PASS: bots keep their configured six chances and human paired dice have a 36% six chance');
 } finally {
   Math.random = originalRandomForDiceTest;
 }

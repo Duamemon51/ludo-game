@@ -34,7 +34,7 @@ const MAX_MISSED = 1;
 const RECONNECT_MS = 60000; // how long an empty room waits for players to come back
 const GAME_CHAT_ENABLED = false;
 const MIN_BET = 30;
-const HUMAN_PAIR_SIX_CHANCE = 0.22;
+const HUMAN_PAIR_SIX_CHANCE = 0.36;
 const HUMAN_SIX_CHANCE = 1 - Math.sqrt(1 - HUMAN_PAIR_SIX_CHANCE);
 const BOT_SIX_CHANCE = {
   expert: 0.65,
